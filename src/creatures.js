@@ -1,7 +1,7 @@
 import * as T from 'three';
 import {vec,up,head,face,peerDepth,paths,route,nearest} from './habitat.js';
 import {stableSeed} from './state.js';
-import {shrimpSizeFactor} from './shrimp-scale.js';
+import {shrimpBodyScale} from './shrimp-scale.js';
 import {scheduleSwim,tickSwim,threaten,startSwim} from './swimming.js';
 export const GAME_SAVE_KEY='aquarium.three.creatures.v1';
 const clamp=x=>Math.max(0,Math.min(1,x));
@@ -33,14 +33,15 @@ export function validateGame(value,seed){
 }
 
 export class CreatureWorld{
- constructor(seed,habitat,saved=null){
+ constructor(seed,habitat,saved=null,colony=saved?.session?.Colony){
+  this.colony=colony;
   this.seed=seed;this.habitat=habitat;this.profile=seed.profile;this.elapsed=0;this.pellet=null;this.agents=[];this.metrics={decisions:0,arrivals:0,blocked:0,peerWaits:0,consumed:0,backwardCorrections:0};
   this.anchors=seed.anchors.map(a=>({...a,position:vec(a.position),normal:vec(a.normal),edges:[...a.edges]}));
   if(saved){saved=validateGame(saved,seed);this.elapsed=saved.elapsed;this.pellet=saved.pellet;this.anchors.forEach((a,i)=>a.food=saved.food[i]);}
   for(const [i,original] of seed.creatures.entries()){
    const data=structuredClone(saved?saved.creatures.find(c=>c.CreatureId===original.CreatureId):original),position=vec(data.Position),rotation=new T.Quaternion(data.Rotation.x,data.Rotation.y,data.Rotation.z,data.Rotation.w).normalize();
    const phase=i<5?i:(stableSeed(data.CreatureId)%4001)/1000;
-   const a={data,position,rotation,index:i,phase:i*1.73,schedule:phase,age:0,hold:8+phase*3,decisionAt:this.elapsed+2+phase*.73,route:[],blocked:new Map(),blockedTime:0,peerTime:0,at:nearest(this.anchors,position),target:-1,progress:0,speed:0,residence:0,feedingOwner:null,feedingCentre:position.clone(),discoveryAt:this.elapsed,noticed:false,manual:null,swim:null,nextRecovery:0,scale:shrimpSizeFactor(data.CreatureId)};
+   const a={data,position,rotation,index:i,phase:i*1.73,schedule:phase,age:0,hold:8+phase*3,decisionAt:this.elapsed+2+phase*.73,route:[],blocked:new Map(),blockedTime:0,peerTime:0,at:nearest(this.anchors,position),target:-1,progress:0,speed:0,residence:0,feedingOwner:null,feedingCentre:position.clone(),discoveryAt:this.elapsed,noticed:false,manual:null,swim:null,nextRecovery:0,scale:shrimpBodyScale({id:data.CreatureId,ageDays:colony?.shrimp?.[data.CreatureId]?.ageDays})};
    if(saved?.anchors)a.at=saved.anchors[saved.creatures.findIndex(c=>c.CreatureId===data.CreatureId)];
    if(saved&&!saved.anchors){const axis=up.clone().applyQuaternion(rotation),near=this.anchors.map((p,i)=>({p,i,d:p.position.distanceTo(position)})).filter(o=>o.d<.04&&o.p.edges.length&&o.p.normal.dot(axis)>.6).sort((a,b)=>a.d-b.d);if(near.length)a.at=near[0].i;}
    if(a.at<0)throw new Error('缺少可用栖息面');a.target=a.at;

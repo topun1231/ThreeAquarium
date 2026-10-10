@@ -29,7 +29,7 @@ test('growth adds nodes in ecology days and stops at the species maximum', () =>
   assert.equal(visibleNodes(list[0]), Math.floor(list[0].Nodes));
   growFlora(list, 86400 * 365);
   assert.equal(list[0].Nodes, SPECIES.rotala.max);
-  const slow = [{...stem(), Species:'anubias', Nodes:4, Host:'w', Local:[0, 0, 0], Normal:[0, 1, 0]}];
+  const slow = [{...stem(), Species:'pala', Nodes:4, Host:'w', Local:[0, 0, 0], Normal:[0, 1, 0]}];
   growFlora(slow, 86400 * 7);
   assert.equal(visibleNodes(slow[0]), 4, 'anubias adds roughly one leaf per eight days');
 });
@@ -40,7 +40,7 @@ test('pruning removes nodes from the top and regrowth resumes from there', () =>
   assert.equal(r.Nodes, 11);
   growFlora([r], 86400 * 2);
   assert.ok(r.Nodes > 11 && r.Nodes < 13);
-  const leaf = {...moss(), Species:'anubias', Nodes:6};
+  const leaf = {...moss(), Species:'pala', Nodes:6};
   pruneFlora(leaf);
   assert.equal(leaf.Nodes, 5);
   const carpet = {...stem(), Species:'carpet', Nodes:70};
@@ -77,7 +77,7 @@ test('default planting is deterministic, uses every species and respects existin
 
 test('flora grows through advanceEcology and survives a session round trip', () => {
   const save = structuredClone(source);
-  save.Tank.Flora = [stem({Nodes:9}), moss()];
+  save.Tank.Flora = [stem({Nodes:9}), moss({Host:save.Tank.Hardscape[0].UniqueId})];
   advanceEcology(save, defs, 86400 * 3);
   assert.ok(Math.abs(save.Tank.Flora[0].Nodes - (9 + 3 * 0.8)) < 1e-9);
   const loaded = validateSession(JSON.parse(JSON.stringify(save)), runtime);
@@ -88,7 +88,7 @@ test('flora grows through advanceEcology and survives a session round trip', () 
 });
 
 test('catalog covers every species and variant, with ground and host placement rules', () => {
-  assert.equal(FLORA_CATALOG.length, 16);
+  assert.equal(FLORA_CATALOG.length, 20);
   assert.deepEqual(parsePlantKind('1'), {unity:1});
   assert.deepEqual(parsePlantKind('flora:rotala:2'), {species:'rotala', variant:2});
   assert.throws(() => parsePlantKind('flora:kelp:0'));
@@ -96,11 +96,23 @@ test('catalog covers every species and variant, with ground and host placement r
   assert.throws(() => checkFloraGround([], {x:0.1, z:-0.15, species:'moss'}), /木石/);
   assert.throws(() => checkFloraGround([stem({X:0.1, Z:-0.15})], {x:0.105, z:-0.15, species:'rotala'}), /太近/);
   assert.throws(() => checkFloraGround([], {x:0.8, z:0, species:'carpet'}), /缸内/);
-  checkFloraHost([], {host:'W1', local:[0, 0.01, 0], species:'anubias'});
-  assert.throws(() => checkFloraHost([], {host:'', local:[0, 0, 0], species:'anubias'}));
+  checkFloraHost([], {host:'W1', local:[0, 0.01, 0], species:'pala'});
+  assert.throws(() => checkFloraHost([], {host:'', local:[0, 0, 0], species:'pala'}));
   const planted = makeFloraRecord({id:'n1', species:'carpet', variant:1, x:0.2, z:-0.2});
   assert.equal(planted.Nodes, SPECIES.carpet.start);
   assert.equal(planted.Variant, 1);
+});
+
+test('native host coordinates are measured in metres for spacing and yaw wraps', () => {
+  const matrix = new T.Matrix4().makeScale(.001,.002,.001), record = moss({Local:[100,10,0]});
+  assert.doesNotThrow(()=>sanitizeFlora([record]));
+  assert.throws(()=>checkFloraHost([record],{host:'wood',local:[101,10,0],species:'moss',matrix}),/太近/);
+  checkFloraHost([record],{host:'wood',local:[150,10,0],species:'moss',matrix});
+  checkFloraHost([record],{host:'wood',local:[100,10,0],species:'moss',matrix,ignore:'m1'});
+  assert.ok(Math.abs(makeFloraRecord({id:'fourth',species:'rotala',variant:0,x:0,z:0,yaw:7.197}).Yaw)<=Math.PI);
+  assert.throws(()=>sanitizeFlora([stem({Yaw:Infinity})]));
+  const save=structuredClone(source);save.Tank.Flora=[record];
+  assert.throws(()=>validateSession(save,runtime),/附着木石/);
 });
 
 test('procedural plants export walkable hulls for shrimp', () => {

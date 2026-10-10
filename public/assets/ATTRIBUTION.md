@@ -1,5 +1,12 @@
 # Three.js migration asset credits
 
+## Authored Anubias integrated 2026-10-10
+
+- **Plants Anubias — Pala**: [original model](https://sketchfab.com/3d-models/plants-anubias-2ba1d06a191b437e848b81b2981a9e02), author **Pala**, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Retained three original plant shapes and photographic color/alpha textures. Modifications: FBX mesh-space orientation, uniform tank-size normalization, attachment origin, lossless WebP texture conversion, shared instanced meshes, nonmetallic wet-leaf material and subtle water motion. No fabricated normal map. Source BLEND/ZIP and FBX remain retained outside the web runtime package.
+- **Aquariumplants like Anubia Barteri — Nullified**: [original model](https://sketchfab.com/3d-models/aquariumplants-like-anubia-barteri-4dbbcb2abf864ee2af70ea7f2b2c691e), author **Nullified**, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Modifications: attached stone and scan debris removed, petioles/rhizome/fine roots locally rebuilt, border-preserving leaf decimation (198,426 original including stone → 36,205 plant triangles), uniform size and attachment origin, shared instanced meshes, original photographic color converted to lossless WebP. Leaf metalness is set to zero and roughness to 0.55 for living foliage; constant source normal image and original metallic map are not shipped. These are adapted models, not the authors' unmodified originals.
+
+Runtime derivatives: `anubias/models.json`, `anubias/geometry.bin`, four shared `anubias/*.webp` textures. Both authors' credits and this modification record must remain with distributions.
+
 Existing approved source meshes and UVs were exported from the formal AQ_REAL002 scene. PNGs were converted to lossless WebP without changing dimensions or RGBA pixels. Unity smoothness/metallic channels are interpreted in the renderer.
 
 

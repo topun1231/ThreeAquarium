@@ -14,7 +14,7 @@ export function validateSession(value,runtime){
  for(const key of ['PlantGrowthMultiplier','TankMaturityMultiplier','EvaporationMultiplier','AlgaeGrowthMultiplier','MaintenancePressureMultiplier'])if(!finite(s.Rates?.[key],0,1000))throw new Error('生态倍率无效');
  if(!tank.Environment||!['WaterLevel','Stability','Cleanliness','Algae'].every(k=>finite(tank.Environment[k],0,1))||typeof tank.Environment.LightOn!=='boolean')throw new Error('水环境记录无效');
  if(s.Colony!=null)s.Colony=sanitizeColony(s.Colony);
- if(tank.Flora!=null)tank.Flora=sanitizeFlora(tank.Flora);
+ if(tank.Flora!=null){tank.Flora=sanitizeFlora(tank.Flora);for(const r of tank.Flora){if(ids.has(r.UniqueId))throw new Error('造景身份无效');ids.add(r.UniqueId);if(r.Host&&!tank.Hardscape.some(h=>h.UniqueId===r.Host))throw new Error('附生水草缺少附着木石');}runtime.validateFloraHosts?.(tank);}
  sanitizeSubstrateKind(tank.Substrate);
  new Substrate(runtime.settings,tank.Substrate);return s;
 }

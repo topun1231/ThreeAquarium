@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-10",
+  "branch": "cursor/procedural-plants-shrimp-3311",
+  "nodeTests": {"passed": 82, "failed": 0},
+  "build": "passed",
+  "models": {"palaTriangles": [2588, 1288, 2598], "nullifiedTriangles": 36205, "proceduralAnubiasRemoved": true},
+  "browser": {"addPala": true, "addNullified": true, "select": true, "rotate": true, "delete": true, "undo": true, "legacyConversion": true, "legacyHostAndPositionPreserved": true, "saveAndReload": true, "capturedErrors": []},
+  "unitChecks": {"hostMoveAndRotation": true, "prune": true, "walkableGeometry": true, "cachedFlowMatchesRender": true},
+  "navigationFromFloor": {"pala": {"reachable": 27, "anchors": 27}, "nullified": {"reachable": 41, "anchors": 51}},
+  "performance": {"gpu": "AMD Radeon RX 6600", "viewport": [1600, 900], "shrimp": 50, "quality": "high", "shadows": true, "initialShortFps": 58.84, "repeatBeforeFlowCacheFps": 44.78, "repeatAfterFlowCacheFps": 51.48, "repeatSeconds": 15, "floraDrawBatches": 44},
+  "limits": ["No dense 200-plant test", "No hour-long soak", "No WeChat device test", "Not every authored scan edge is reachable for shrimp", "Beyond original leaf groups growth only changes uniform size"]
+}

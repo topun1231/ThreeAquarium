@@ -1,7 +1,7 @@
 import * as T from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {stableSeed} from './state.js';
-import {SPECIES, FLORA_VARIANTS, floraSignature, planFlora, visibleNodes} from './flora.js';
+import {SPECIES, FLORA_VARIANTS, floraSignature, planFlora, visibleNodes, visibleUpright} from './flora.js';
 
 const UP = new T.Vector3(0, 1, 0);
 
@@ -119,39 +119,19 @@ const UNITS = {
     }
     return merge(parts);
   },
-  anubiasLeaf(v, rand) {
-    const petiole = 0.0028 + v * 0.00045, lean = 0.08 + rand() * 0.1;
-    const length = 0.028 + v * 0.0036, width = 0.017 + (v % 3) * 0.0024 + rand() * 0.0018;
-    const leaf = blade({length, width, round:0.54, cup:0.06, curl:-0.03 - rand() * 0.025, droop:0.04 + rand() * 0.03, wave:0.05, heart:0.55, rows:12, cols:5, midrib:0.22});
-    const stem = paint(stalk(0.00032, petiole, 1, 5), c => c.setRGB(0.42, 0.5, 0.34));
-    return merge([
-      stem.applyMatrix4(new T.Matrix4().makeRotationZ(-lean)),
-      placed(leaf, {x:Math.sin(lean) * petiole, y:Math.cos(lean) * petiole, pitch:0.88 + rand() * 0.16, yaw:(rand() - 0.5) * 0.18, roll:(rand() - 0.5) * 0.1}),
-    ]);
-  },
-  rhizome() {
-    const body = new T.CapsuleGeometry(0.00115, 0.03, 4, 8).rotateZ(Math.PI / 2).translate(0.015, 0, 0);
-    body.deleteAttribute('uv');
-    const parts = [paint(body, (c, x, y) => c.setRGB(0.55 + Math.abs(y) * 20, 0.42, 0.26))];
-    for (let i = 0; i < 5; i++) {
-      const knob = new T.SphereGeometry(0.00135 + (i % 2) * 0.00025, 7, 5);
-      knob.translate(0.004 + i * 0.0055, (i % 2 ? 0.0004 : -0.0003), (i % 3 - 1) * 0.00035);
-      knob.deleteAttribute('uv');
-      parts.push(paint(knob, c => c.setRGB(0.5, 0.4, 0.24)));
-    }
-    return merge(parts);
-  },
+
 };
 
 const COLORS = {
   rotalaBase:new T.Color('#3a6b2c'), rotalaMid:new T.Color('#8d6234'), rotalaTip:new T.Color('#c4544c'), rotalaStem:new T.Color('#5c3a28'),
-  carpet:new T.Color('#2f5c22'), moss:new T.Color('#1a2c16'), anubias:new T.Color('#355c38'), anubiasYoung:new T.Color('#6a8f40'), rhizome:new T.Color('#6a5334'),
+  carpet:new T.Color('#2f5c22'), moss:new T.Color('#1a2c16'),
 };
 
 function swayMaterial(name, {color = '#ffffff', roughness = 0.62, amplitude, height, time, thin = 0.18, clearcoat = 0}) {
   const material = clearcoat > 0
     ? new T.MeshPhysicalMaterial({name, color, roughness, metalness:0, vertexColors:true, side:T.DoubleSide, clearcoat, clearcoatRoughness:0.32})
     : new T.MeshStandardMaterial({name, color, roughness, metalness:0, vertexColors:true, side:T.DoubleSide});
+  material.userData.sway = {amplitude, height};
   material.onBeforeCompile = shader => {
     shader.uniforms.aqFloraTime = time;
     shader.uniforms.aqFloraSway = {value:new T.Vector2(amplitude, height)};
@@ -187,7 +167,17 @@ function swayMaterial(name, {color = '#ffffff', roughness = 0.62, amplitude, hei
 function tipOf(geo) {
   geo.computeBoundingBox();
   const b = geo.boundingBox;
-  return [b.max.x * 0.9, b.min.y + (b.max.y - b.min.y) * 0.62, (b.min.z + b.max.z) * 0.5];
+  const p = geo.attributes.position, target = new T.Vector3(b.max.x * 0.9, b.max.y, (b.min.z + b.max.z) * 0.5);
+  let best = 0, distance = Infinity;
+  for (let i = 0; i < p.count; i++) { const d = new T.Vector3().fromBufferAttribute(p, i).distanceToSquared(target); if (d < distance) { best = i; distance = d; } }
+  return new T.Vector3().fromBufferAttribute(p, best).toArray();
+}
+
+export function swayFloraPoint(point, stem, {amplitude, height}, time) {
+  const h = T.MathUtils.clamp(Math.max(0, point.y - stem[1]) / height, 0, 1.6), gain = amplitude * h * h, phase = stem[3];
+  point.x += (Math.sin(time * .62 + stem[0] * 9 + phase) + .45 * Math.sin(time * 1.37 + stem[2] * 13 + phase * 1.7)) * gain;
+  point.z += (.6 * Math.sin(time * .47 + stem[2] * 7 + phase * .6) + .3 * Math.sin(time * 1.11 + stem[0] * 5)) * gain;
+  return point;
 }
 
 export function floraUnitMetrics() {
@@ -206,7 +196,7 @@ export class FloraView {
     this.aq = aq;
     this.fallbackHabitat = fallbackHabitat;
     this.root = new T.Group();
-    this.root.name = 'Procedural flora';
+    this.root.name = 'Tank flora';
     aq.root.add(this.root);
     this.time = {value:0};
     this.density = 1;
@@ -218,14 +208,13 @@ export class FloraView {
       rotalaStem:swayMaterial('Flora rotala stem', {amplitude:0.0045, height:0.22, time:t, roughness:0.74, thin:0.04}),
       carpet:swayMaterial('Flora carpet', {amplitude:0.0005, height:0.008, time:t, roughness:0.58, thin:0.22}),
       moss:swayMaterial('Flora moss', {amplitude:0.0007, height:0.008, time:t, roughness:0.92, thin:0.05}),
-      anubiasLeaf:swayMaterial('Flora anubias leaf', {amplitude:0.0012, height:0.03, time:t, roughness:0.34, thin:0.16, clearcoat:0.42}),
-      rhizome:swayMaterial('Flora rhizome', {amplitude:0.0002, height:0.03, time:t, roughness:0.78, thin:0}),
+
     };
     aq.materials.push(...Object.values(this.materials));
     this.units = {};
     this.tips = {};
     for (const key of Object.keys(UNITS)) {
-      const variants = ['rotalaStem', 'rhizome'].includes(key) ? 1 : FLORA_VARIANTS;
+      const variants = key === 'rotalaStem' ? 1 : FLORA_VARIANTS;
       this.units[key] = Array.from({length:variants}, (_, v) => UNITS[key](v, random(stableSeed(key + v))));
       this.tips[key] = this.units[key].map(tipOf);
     }
@@ -241,6 +230,27 @@ export class FloraView {
     if (this.last) this.sync(this.last.save, this.last.runtime, true);
   }
 
+  installAnubias({models, materials, maps = new Map()}) {
+    this.models = models;
+    this.leafKeys = new Set();
+    const shared = materials.map((m, i) => {
+      const material = swayMaterial('Authored anubias ' + i, {amplitude:0.0008, height:0.085, time:this.time, roughness:m.roughness, thin:0.12, clearcoat:m.clearcoat});
+      material.vertexColors = false;
+      material.color.fromArray(m.color);
+      material.map = maps.get(m.map) || null;
+      material.alphaTest = m.alphaTest;
+      this.aq.materials.push(material);
+      return material;
+    });
+    for (const [species, variants] of Object.entries(models)) for (const [v, model] of variants.entries()) for (const [i, part] of model.parts.entries()) {
+      part.key = species + v + 'part' + i;
+      this.units[part.key] = [part.geometry];
+      this.tips[part.key] = [tipOf(part.geometry)];
+      this.materials[part.key] = shared[part.material];
+      if (part.leaf) this.leafKeys.add(part.key);
+    }
+  }
+
   scene(runtime) {
     if (runtime.current) return runtime.current;
     const habitat = this.fallbackHabitat();
@@ -251,7 +261,7 @@ export class FloraView {
     const node = scene.entities.get(id);
     if (!node) return null;
     node.updateMatrixWorld(true);
-    return new T.Matrix4().copy(this.aq.root.matrixWorld).invert().multiply(node.matrixWorld);
+    return scene.unity ? node.matrixWorld.clone() : new T.Matrix4().copy(this.aq.root.matrixWorld).invert().multiply(node.matrixWorld);
   }
 
   plan(save, scene) {
@@ -269,7 +279,7 @@ export class FloraView {
       if (!r.World) { out.push(r); continue; }
       const id = [...scene.entities].find(([, node]) => node.name === r.Host)?.[0] ?? r.Host.replace(/^[WR]0 /, ''), matrix = this.host(scene, id);
       if (!matrix) continue;
-      const inverse = matrix.clone().invert(), local = new T.Vector3(...r.World).applyMatrix4(inverse), normal = new T.Vector3(...r.WorldNormal).transformDirection(inverse);
+      const inverse = matrix.clone().invert(), local = new T.Vector3(...r.World).applyMatrix4(inverse), normal = new T.Vector3(...r.WorldNormal).applyNormalMatrix(new T.Matrix3().setFromMatrix4(matrix).transpose());
       const {World, WorldNormal, ...rest} = r;
       out.push({...rest, Host:id, Local:local.toArray(), Normal:normal.toArray()});
     }
@@ -289,7 +299,7 @@ export class FloraView {
     this.build(save.Tank.Flora, scene);
   }
 
-  build(list, scene) {
+  instances(list, scene) {
     const buckets = new Map();
     const add = (key, variant, matrix, color, stem, owner) => {
       const name = key + ':' + variant;
@@ -342,7 +352,7 @@ export class FloraView {
       } else {
         const matrix = this.host(scene, record.Host);
         if (!matrix) continue;
-        const anchor = new T.Vector3(...record.Local).applyMatrix4(matrix), normal = new T.Vector3(...record.Normal).transformDirection(matrix).normalize();
+        const anchor = new T.Vector3(...record.Local).applyMatrix4(matrix), normal = new T.Vector3(...record.Normal).applyNormalMatrix(new T.Matrix3().getNormalMatrix(matrix));
         const owner = scene.entities.get(record.Host)?.name;
         if (!hostSurfaces.has(owner)) hostSurfaces.set(owner, habitat.surfaces.filter(s => s.owner === owner));
         const surfaces = hostSurfaces.get(owner);
@@ -369,30 +379,38 @@ export class FloraView {
             add('moss', (record.Variant + i) % FLORA_VARIANTS, new T.Matrix4().compose(at, tmp.q.clone(), new T.Vector3(size, size * (0.85 + rand() * 0.5), size)), COLORS.moss.clone().offsetHSL(hueShift + (rand() - 0.5) * 0.012, (rand() - 0.5) * 0.06, (rand() - 0.5) * 0.05), [at.x, at.y, at.z, phase + i], {id:record.UniqueId, node:i});
           }
         } else {
-          const along = new T.Vector3(Math.cos(record.Yaw), 0, Math.sin(record.Yaw)).projectOnPlane(normal).normalize();
-          if (along.lengthSq() < 0.5) along.copy(tangent);
-          const length = 0.018 + n * 0.003;
-          const start = snap(anchor.clone().addScaledVector(along, -length / 2));
-          tmp.q.setFromUnitVectors(new T.Vector3(1, 0, 0), along);
-          add('rhizome', 0, new T.Matrix4().compose(start.clone().addScaledVector(normal, 0.0014), tmp.q.clone(), new T.Vector3(length / 0.03, 0.7, 1)), COLORS.rhizome.clone(), [start.x, start.y, start.z, phase], {id:record.UniqueId, node:0});
-          for (let k = 0; k < n; k++) {
-            const t = (k + 0.18 + rand() * 0.2) / n, at = start.clone().addScaledVector(along, length * t).addScaledVector(normal, 0.002);
-            const young = k >= n - 2, age = 1 - k / Math.max(1, n - 1);
-            const size = record.Scale * (young ? 0.52 + rand() * 0.12 : 0.78 + age * 0.32 + rand() * 0.1);
-            const yaw = Math.atan2(-along.z, along.x) + (k / Math.max(1, n - 1) - 0.5) * 2.6 + (rand() - 0.5) * 0.35;
-            tmp.q.setFromUnitVectors(UP, UP.clone().lerp(normal, 0.08).normalize()).multiply(tmp.q2.setFromAxisAngle(UP, yaw));
-            const color = (young ? COLORS.anubiasYoung : COLORS.anubias).clone().offsetHSL(hueShift, (rand() - 0.5) * 0.04, (rand() - 0.5) * 0.04);
-            add('anubiasLeaf', (record.Variant + k) % FLORA_VARIANTS, new T.Matrix4().compose(at, tmp.q.clone(), new T.Vector3(size, size, size)), color, [start.x, start.y, start.z, phase], {id:record.UniqueId, node:k});
+          const models = this.models?.[record.Species];
+          if (!models) throw new Error('水榕模型尚未加载');
+          const model = models[record.Variant % models.length];
+          // shortcut: growth beyond the authored leaf groups only changes uniform size; extend the source when new leaf shapes are approved.
+          const growth = 1 + Math.max(0, n - spec.start) * 0.018;
+          // The attachment follows its host; gravity, not the rock normal, sets the growth axis.
+          const heading = new T.Vector3(Math.sin(record.Yaw),0,Math.cos(record.Yaw)).transformDirection(matrix);
+          const yaw = Math.hypot(heading.x,heading.z) > .001 ? Math.atan2(heading.x,heading.z) : record.Yaw;
+          tmp.q2.setFromUnitVectors(UP, normal);
+          const lean = Math.min(1, T.MathUtils.degToRad(25) / Math.max(.0001, UP.angleTo(normal))) * (1 - visibleUpright(record));
+          tmp.q.identity().slerp(tmp.q2, lean).multiply(tmp.q2.setFromAxisAngle(UP,yaw));
+          const size = record.Scale * growth * (0.94 + rand() * 0.12);
+          const pose = new T.Matrix4().compose(anchor, tmp.q.clone(), new T.Vector3(size,size,size));
+          const leaves = Math.max(1, Math.ceil(model.leaves * Math.min(1,n/spec.start)));
+          for (const part of model.parts) {
+            if (part.node >= leaves) continue;
+            const color = new T.Color().setScalar(.94 + rand()*.12).offsetHSL(hueShift,0,0);
+            add(part.key, 0, pose.clone(), color, [anchor.x,anchor.y,anchor.z,phase], {id:record.UniqueId,node:part.node});
           }
         }
       }
     }
-    const used = new Set();
+    return buckets;
+  }
+
+  build(list, scene) {
+    const buckets = this.instances(list, scene), used = new Set();
     for (const [name, b] of buckets) {
       used.add(name);
       let entry = this.meshes.get(name);
       if (!entry || entry.capacity < b.matrices.length) {
-        if (entry) { this.root.remove(entry.mesh); entry.mesh.dispose(); }
+        if (entry) { this.root.remove(entry.mesh); entry.mesh.geometry.dispose(); entry.mesh.dispose(); }
         const capacity = Math.ceil(b.matrices.length * 1.5) + 8;
         const geometry = this.units[b.key][b.variant].clone();
         const stems = new T.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
@@ -410,7 +428,7 @@ export class FloraView {
       }
       const {mesh, stems} = entry;
       mesh.userData.tip = this.tips[b.key][b.variant];
-      mesh.castShadow = this.shadows && ['rotalaLeaves', 'rotalaStem', 'anubiasLeaf'].includes(b.key);
+      mesh.castShadow = this.shadows && (['rotalaLeaves', 'rotalaStem'].includes(b.key) || /^(pala|nullified)/.test(b.key));
       b.matrices.forEach((m, i) => { mesh.setMatrixAt(i, m); mesh.setColorAt(i, b.colors[i]); stems.setXYZW(i, ...b.stems[i]); });
       mesh.count = b.matrices.length;
       mesh.userData.owners = b.owners;
@@ -430,20 +448,65 @@ export class FloraView {
 
   update(time) { this.time.value = time; }
 
+  collisionItems(list, scene) {
+    const plants = new Map();
+    for (const b of this.instances(list, scene).values()) {
+      const unit = this.units[b.key][b.variant];
+      unit.computeBoundingBox();
+      // shortcut: tiny moss/carpet leaflets share a shoot support disc; use triangles if shrimp become smaller than a shoot.
+      const tiny = b.key === 'moss' || b.key === 'carpet';
+      const base = tiny ? new T.CircleGeometry(b.key === 'moss' ? .003 : .0025, 8).rotateX(-Math.PI/2).translate(0, unit.boundingBox.max.y, 0) : unit;
+      for (let i = 0; i < b.matrices.length; i++) {
+        const id = b.owners[i].id;
+        if (!plants.has(id)) plants.set(id, {parts:[], samples:[]});
+        const plant = plants.get(id), geo = base.clone().applyMatrix4(b.matrices[i]);
+        for (const attr of Object.keys(geo.attributes)) if (attr !== 'position') geo.deleteAttribute(attr);
+        const p = geo.attributes.position, stems = new Float32Array(p.count * 4), sways = new Float32Array(p.count * 2), sway = this.materials[b.key].userData.sway;
+        for (let j = 0; j < p.count; j++) { stems.set(b.stems[i], j*4); sways.set([sway.amplitude, sway.height], j*2); }
+        geo.setAttribute('floraStem', new T.BufferAttribute(stems, 4));
+        geo.setAttribute('floraSway', new T.BufferAttribute(sways, 2));
+        if (tiny) plant.samples.push(new T.Vector3(0, unit.boundingBox.max.y, 0).applyMatrix4(b.matrices[i]));
+        else if (b.key === 'rotalaStem') {
+          const tip = this.tips[b.key][b.variant];
+          for (const y of [.1,.5,1]) plant.samples.push(new T.Vector3(tip[0],y,tip[2]).applyMatrix4(b.matrices[i]));
+        } else {
+          plant.samples.push(new T.Vector3(...this.tips[b.key][b.variant]).applyMatrix4(b.matrices[i]));
+          for (const j of [0, Math.floor(p.count*.25), Math.floor(p.count*.5)]) plant.samples.push(new T.Vector3().fromBufferAttribute(p,j));
+        }
+        plant.parts.push(geo);
+      }
+      if (tiny) base.dispose();
+    }
+    return [...plants].map(([id, plant]) => {
+      const geometry = mergeGeometries(plant.parts, false); plant.parts.forEach(g => g.dispose());
+      return {node:'flora/'+id, owner:'Plant '+id, kind:3, solid:false, flora:true, ownedSource:true, material:{motion:1, leaf:1}, geometry, transform:new T.Matrix4(), samples:plant.samples};
+    });
+  }
+
   pearlSites() {
     const sites = [], matrix = new T.Matrix4(), tip = new T.Vector3();
-    for (const {mesh} of this.meshes.values()) {
+    for (const [key, {mesh}] of this.meshes) {
       if (!mesh.visible || !mesh.count) continue;
       const name = mesh.name || '';
-      if (!/rotalaLeaves|carpet|moss|anubiasLeaf/.test(name)) continue;
-      const vigor = /rotala/.test(name) ? 1.4 : /anubias/.test(name) ? 0.55 : 0.7;
-      const keep = /rotala/.test(name) ? 0.3 : /anubias/.test(name) ? 0.16 : 0.08;
+      if (!/rotalaLeaves|carpet|moss/.test(name) && !this.leafKeys?.has(key.split(':')[0])) continue;
+      const vigor = /rotala/.test(name) ? 1.4 : /pala|nullified/.test(name) ? 0.55 : 0.7;
+      const keep = /rotala/.test(name) ? 0.3 : /pala|nullified/.test(name) ? 0.16 : 0.08;
       const local = mesh.userData.tip || [0.008, 0.001, 0];
       for (let i = 0; i < mesh.count; i++) {
         if (random(stableSeed(name + ':' + i))() > keep * this.density) continue;
         mesh.getMatrixAt(i, matrix);
         tip.set(local[0], local[1], local[2]).applyMatrix4(matrix);
-        sites.push({x:tip.x, y:tip.y, z:tip.z, vigor});
+        const owner = mesh.userData.owners[i];
+        const resolve = () => {
+          const current = this.meshes.get(key)?.mesh;
+          if (!current?.visible) return null;
+          const at = current.userData.owners.findIndex(o => o.id === owner.id && o.node === owner.node);
+          if (at < 0) return null;
+          const m = new T.Matrix4(); current.getMatrixAt(at, m);
+          const point = new T.Vector3(...current.userData.tip).applyMatrix4(m), stem = current.geometry.attributes.aqStem;
+          return swayFloraPoint(point, Array.from(stem.array.subarray(at*4,at*4+4)), current.material.userData.sway, this.time.value);
+        };
+        sites.push({x:tip.x, y:tip.y, z:tip.z, vigor, resolve});
       }
     }
     return sites;
@@ -456,37 +519,11 @@ export class FloraView {
   }
 }
 
-/** Kind-3 walkable hulls in Unity space so shrimp can graze the new plants. */
-export function floraCollisionItems(list, {soil, hostMatrix}) {
-  const items = [];
-  if (!list?.length) return items;
-  for (const record of list) {
-    const spec = SPECIES[record.Species];
-    if (!spec) continue;
-    let transform, geo;
-    if (spec.host) {
-      const host = hostMatrix?.(record.Host);
-      if (!host) continue;
-      const local = new T.Vector3(...record.Local);
-      const normal = new T.Vector3(...record.Normal).normalize();
-      transform = host.clone().multiply(new T.Matrix4().compose(local, new T.Quaternion().setFromUnitVectors(UP, normal), new T.Vector3(1, 1, 1)));
-      const radius = (spec.kind === 'moss' ? 0.012 : 0.018) * record.Scale;
-      geo = new T.CircleGeometry(radius, 8);
-      geo.rotateX(-Math.PI / 2);
-    } else {
-      const y = soil.sample(record.X, record.Z);
-      const n = visibleNodes(record);
-      transform = new T.Matrix4().compose(new T.Vector3(record.X, y, record.Z), new T.Quaternion(), new T.Vector3(1, 1, 1));
-      if (spec.kind === 'stem') {
-        const height = Math.max(0.04, n * 0.011 * record.Scale);
-        geo = new T.CylinderGeometry(0.0035, 0.0035, height, 5, 1, true);
-        geo.translate(0, height / 2, 0);
-      } else {
-        geo = new T.CircleGeometry(0.0043 * Math.sqrt(n) * record.Scale, 8);
-        geo.rotateX(-Math.PI / 2);
-      }
-    }
-    items.push({node:'flora/' + record.UniqueId, owner:'Plant ' + record.UniqueId, kind:3, solid:false, rebuild:false, geometry:geo, transform});
-  }
-  return items;
+/** Collision-only fallback for callers without a rendered FloraView. */
+let collisionView;
+export function floraCollisionItems(list, {soil, hostMatrix, habitat = {surfaces:[]}}) {
+  collisionView ??= new FloraView({root:new T.Group(), materials:[]});
+  collisionView.host = (_scene, id) => hostMatrix?.(id) || null;
+  const entities = new Map(list.filter(r => r.Host).map(r => [r.Host, {name:'W0 '+r.Host}]));
+  return collisionView.collisionItems(list, {soil, habitat, entities});
 }

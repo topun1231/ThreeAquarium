@@ -3,32 +3,17 @@ import * as T from 'three';
 const KEY = 'aquarium.three.quality.v1';
 const PRESETS = {
   high: {fog:0.22, caustic:0.42, particles:36, shafts:true, pearling:1, floraDensity:1, floraShadows:true, shrimpDetail:'full'},
-  medium: {fog:0.12, caustic:0.26, particles:16, shafts:false, pearling:0.5, floraDensity:0.7, floraShadows:true, shrimpDetail:'near'},
-  low: {fog:0, caustic:0, particles:0, shafts:false, pearling:0, floraDensity:0.45, floraShadows:false, shrimpDetail:'basic'},
 };
 
-export function qualityPreset(level) {
-  return PRESETS[level] || PRESETS.high;
+export function qualityPreset() {
+  return PRESETS.high;
 }
 
-export function initialQuality(storage = globalThis.localStorage, narrow = () => matchMedia('(max-width: 700px)').matches) {
-  try {
-    const saved = storage?.getItem(KEY);
-    if (PRESETS[saved]) return saved;
-  } catch {}
-  return narrow() ? 'low' : 'high';
+export function initialQuality(storage = globalThis.localStorage) {
+  try { storage?.setItem(KEY, 'high'); } catch {}
+  return 'high';
 }
 
-/** The saved choice wins over the dropdown's markup default; the dropdown is then made to show it. */
-export function startQuality(select, storage, narrow) {
-  const level = initialQuality(storage, narrow);
-  if (select) select.value = level;
-  return level;
-}
-
-function remember(level) {
-  try { localStorage.setItem(KEY, level); } catch {}
-}
 
 function thicken(node, floor, target) {
   const scale = node.scale;
@@ -155,8 +140,8 @@ export function installTankLook({scene, aq, water}) {
   scene.add(drift, shafts);
   let level = 'high';
   const listeners = [];
-  function apply(next) {
-    level = PRESETS[next] ? next : 'high';
+  function apply() {
+    level = initialQuality();
     const preset = PRESETS[level];
     if (water?.fog) water.fog.value = preset.fog;
     gain.value = preset.caustic;
@@ -164,14 +149,9 @@ export function installTankLook({scene, aq, water}) {
     drift.visible = preset.particles > 0;
     drift.geometry.setDrawRange(0, preset.particles);
     shafts.visible = preset.shafts;
-    remember(level);
     for (const fn of listeners) fn(PRESETS[level], level);
-    const select = document.getElementById('view-quality');
-    if (select && select.value !== level) select.value = level;
   }
-  const select = document.getElementById('view-quality');
-  apply(startQuality(select));
-  select?.addEventListener('change', () => apply(select.value));
+  apply();
   return {
     get level(){ return level; },
     setQuality: apply,

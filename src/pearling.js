@@ -49,8 +49,10 @@ export function createPearling({root, sites, lightOn, waterLevel}) {
     const idle = pool.find(mesh => mesh.userData.life < 0);
     if (!idle) return;
     const site = catalog[Math.floor(Math.random() * catalog.length)];
+    const point = site.resolve ? site.resolve() : site;
+    if (!point) { refresh(); return; }
     idle.userData = {life:0, cling:CLING * (0.7 + Math.random() * 0.6), site, phase:Math.random() * 6.28, vigor:site.vigor || 1};
-    idle.position.set(site.x, site.y, site.z);
+    idle.position.set(point.x, point.y, point.z);
     idle.scale.setScalar(0.00048);
     idle.visible = true;
     next = now + (0.18 + Math.random() * 0.55) / Math.max(0.15, rate * (site.vigor || 1));
@@ -74,13 +76,16 @@ export function createPearling({root, sites, lightOn, waterLevel}) {
         const clinging = u.life < u.cling;
         const grown = 0.00055 + Math.min(0.0012, u.life * 0.0003) * u.vigor;
         if (clinging) {
-          mesh.position.set(u.site.x, u.site.y, u.site.z);
+          const point = u.site.resolve ? u.site.resolve() : u.site;
+          if (!point) { mesh.visible = false; u.life = -1; continue; }
+          mesh.position.set(point.x, point.y, point.z);
           mesh.scale.setScalar(grown * (0.55 + 0.45 * u.life / u.cling));
         } else {
+          u.origin ??= mesh.position.clone();
           const rise = u.life - u.cling;
-          mesh.position.y = u.site.y + rise * 0.042;
-          mesh.position.x = u.site.x + Math.sin(now * 2.1 + u.phase) * 0.0016;
-          mesh.position.z = u.site.z + Math.cos(now * 1.6 + u.phase) * 0.0012;
+          mesh.position.y = u.origin.y + rise * 0.042;
+          mesh.position.x = u.origin.x + Math.sin(now * 2.1 + u.phase) * 0.0016;
+          mesh.position.z = u.origin.z + Math.cos(now * 1.6 + u.phase) * 0.0012;
           mesh.scale.setScalar(grown);
           if (rise > RISE) { mesh.visible = false; u.life = -1; continue; }
           if (mesh.position.y > level - 0.006) {

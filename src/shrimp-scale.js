@@ -19,6 +19,7 @@ export function shrimpBodyScale({ageDays, sizeFactor, id} = {}) {
 
 export function applyAgentScales(world, colony) {
   if (!world?.agents) return;
+  world.colony = colony;
   for (const agent of world.agents) {
     const record = colony?.shrimp?.[agent.data.CreatureId];
     agent.scale = shrimpBodyScale({ageDays:record?.ageDays, id:agent.data.CreatureId});

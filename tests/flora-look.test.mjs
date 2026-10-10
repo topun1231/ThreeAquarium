@@ -21,9 +21,6 @@ function positions(flora, re) {
 
 test('procedural units read as plants, not sticks or lawn grass', () => {
   const m = floraUnitMetrics();
-  assert.ok(m.anubiasLeaf.x > 0.022, `anubias length ${m.anubiasLeaf.x}`);
-  assert.ok(m.anubiasLeaf.z > 0.014, `anubias width ${m.anubiasLeaf.z}`);
-  assert.ok(m.anubiasLeaf.z / m.anubiasLeaf.x > 0.42, 'anubias blade is ovate, not a bamboo stick');
   assert.ok(m.moss.y < 0.011, `moss is a low cushion, not upright grass ${m.moss.y}`);
   assert.ok(m.moss.verts > 80, 'moss is a dense mat of tiny leaflets');
   assert.ok(m.carpet.y < 0.012, 'carpet shoots stay low');
@@ -40,22 +37,6 @@ test('one carpet plant spreads into an irregular lawn, not a single mound', () =
   const xs = pts.map(p => p.x), zs = pts.map(p => p.z);
   assert.ok(Math.max(...xs) - Math.min(...xs) > 0.03, 'spreads sideways');
   assert.ok(Math.max(...zs) - Math.min(...zs) > 0.02, 'spreads along the front');
-});
-
-test('anubias has a creeping rhizome and several age-varied leaves', () => {
-  const flora = view();
-  const host = new T.Object3D();
-  host.name = 'W0 wood';
-  host.updateMatrixWorld(true);
-  flora.build([{UniqueId:'a1', Species:'anubias', Variant:1, Yaw:0.4, Scale:1, Hue:0, Nodes:6, Host:'wood', Local:[0, 0.02, 0], Normal:[0, 1, 0]}], {
-    soil:{sample:() => 0.04}, habitat:{surfaces:[]}, entities:new Map([['wood', host]]),
-  });
-  const leaves = positions(flora, /anubiasLeaf/);
-  const rhizome = positions(flora, /rhizome/);
-  assert.ok(leaves.length >= 5, `leaves ${leaves.length}`);
-  assert.equal(rhizome.length, 1);
-  const span = Math.hypot(Math.max(...leaves.map(p => p.x)) - Math.min(...leaves.map(p => p.x)), Math.max(...leaves.map(p => p.z)) - Math.min(...leaves.map(p => p.z)));
-  assert.ok(span > 0.01, 'leaves are spaced along the rhizome');
 });
 
 test('pearl sites sit on leaf instances of the new plants', () => {
