@@ -9,6 +9,7 @@ import {createHabitat,reconnectGraph,vec,nearest} from './habitat.js';
 import {CreatureWorld} from './creatures.js';
 import {floraCollisionItems} from './flora-view.js';
 import {populationRecords} from './population.js';
+import {validateSession} from './session.js';
 const identity=new T.Matrix4(),mirror=new T.Matrix4().makeScale(1,1,-1);
 const disposeSurface=s=>{s.geo.dispose();if(s.ownedSource)s.source.dispose();};
 export const rotation=r=>new T.Quaternion().setFromEuler(new T.Euler(...['x','y','z'].map(k=>T.MathUtils.degToRad(r[k])),'YXZ'));
@@ -21,6 +22,14 @@ export function needsCatalogMeshes(runtime, save) {
   for (const r of save.Tank.Plants || []) {
     const before = runtime.originalRecords.get(r.UniqueId);
     if (!before || r.Stage !== before.Stage || r.Growth !== before.Growth || JSON.stringify(r.Cuts) !== JSON.stringify(before.Cuts)) return true;
+  }
+  return false;
+}
+
+export function needsCatalogFor(runtime, save) {
+  if (needsCatalogMeshes(runtime, save)) return true;
+  for (const r of save?.Tank?.Flora || []) {
+    if (r.Host && !runtime.originals.has(r.Host)) return true;
   }
   return false;
 }
@@ -51,6 +60,8 @@ export class TankRuntime {
  }
  // Catalog leaf-sway clock. The sample tank uses scene meshes, so this is a no-op until a clone is loaded.
  update(dt,now){this.catalog?.update?.(dt,now);}
+ needsCatalogFor(save){return needsCatalogFor(this,save);}
+ async readyForSession(save){if(this.needsCatalogFor(save))await this.ensureCatalog();return validateSession(save,this);}
  cloneOriginal(record){const original=this.originals.get(record.UniqueId);if(!original)return null;const node=original.clone(true);node.visible=true;const world=mirror.clone().multiply(original.matrixWorld);world.decompose(node.position,node.quaternion,node.scale);
   const before=this.originalRecords.get(record.UniqueId),delta=new T.Matrix4().compose(vec(record.Position),rotation(record.Rotation),vec(record.Scale)).multiply(new T.Matrix4().compose(vec(before.Position),rotation(before.Rotation),vec(before.Scale)).invert());node.applyMatrix4(delta);return node;
  }
