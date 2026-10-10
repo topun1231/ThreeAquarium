@@ -13,22 +13,48 @@ const identity=new T.Matrix4(),mirror=new T.Matrix4().makeScale(1,1,-1);
 const disposeSurface=s=>{s.geo.dispose();if(s.ownedSource)s.source.dispose();};
 export const rotation=r=>new T.Quaternion().setFromEuler(new T.Euler(...['x','y','z'].map(k=>T.MathUtils.degToRad(r[k])),'YXZ'));
 const copyTransform=(o,r)=>{o.position.copy(vec(r.Position));o.quaternion.copy(rotation(r.Rotation));o.scale.copy(vec(r.Scale));};
+export function needsCatalogMeshes(runtime, save) {
+  for (const r of save.Tank.Hardscape || []) {
+    if (runtime.entries.get(r.TypeId)?.legacy && !runtime.originals.has(r.UniqueId) && ['R04', 'R06'].includes(r.TypeId)) continue;
+    if (!runtime.originals.has(r.UniqueId)) return true;
+  }
+  for (const r of save.Tank.Plants || []) {
+    const before = runtime.originalRecords.get(r.UniqueId);
+    if (!before || r.Stage !== before.Stage || r.Growth !== before.Growth || JSON.stringify(r.Cuts) !== JSON.stringify(before.Cuts)) return true;
+  }
+  return false;
+}
+
 export class TankRuntime {
- static async load(aq,layoutSource,progress){const checked=async r=>{if(!r.ok)throw new Error('资源读取失败 '+r.url);return r;};const [data,buffer,source]=await Promise.all([fetch('/assets/catalog.json').then(checked).then(r=>r.json()),fetch('/assets/catalog-geometry.bin').then(checked).then(r=>r.arrayBuffer()),fetch('/assets/setup.json').then(checked).then(r=>r.json())]);
-  const catalog=await loadAquarium(progress,{pack:data.assets,buffer});return new TankRuntime(aq,layoutSource,data,catalog,source);
+ static async load(aq,layoutSource,progress){const checked=async r=>{if(!r.ok)throw new Error('资源读取失败 '+r.url);return r;};
+  // Catalog meshes/textures stay on disk until a clone actually needs them (new stone, grown/pruned Unity plant).
+  const [data,source]=await Promise.all([fetch('/assets/catalog.json').then(checked).then(r=>r.json()),fetch('/assets/setup.json').then(checked).then(r=>r.json())]);
+  return new TankRuntime(aq,layoutSource,data,null,source);
  }
- constructor(aq,layoutSource,data,catalog,source){this.aq=aq;this.data=data;this.catalog=catalog;this.source=source;this.definitions=data.definitions.map(JSON.parse);this.config=JSON.parse(data.simulationConfig);this.settings=JSON.parse(data.ground);this.sourceSoil=new Substrate(this.settings,source.Tank.Substrate);this.catalogSettings=JSON.parse(data.catalog);this.entries=new Map(data.entries.map(e=>[e.key,e]));this.originals=new Map();this.originalRecords=new Map();this.originalHidden=[];
+ constructor(aq,layoutSource,data,catalog,source){this.aq=aq;this.data=data;this.catalog=catalog;this.source=source;this.definitions=data.definitions.map(JSON.parse);this.config=JSON.parse(data.simulationConfig);this.settings=JSON.parse(data.ground);this.sourceSoil=new Substrate(this.settings,source.Tank.Substrate);this.catalogSettings=JSON.parse(data.catalog);this.entries=new Map(data.entries.map(e=>[e.key,e]));this.originals=new Map();this.originalRecords=new Map();this.originalHidden=[];this._catalogPending=null;
   aq.root.updateMatrixWorld(true);
   for(const p of layoutSource.plants){this.originals.set(p.record.UniqueId,aq.nodes[p.node]);this.originalRecords.set(p.record.UniqueId,p.record);this.originalHidden.push(aq.nodes[p.node]);}
   for(const r of source.Tank.Hardscape){const node=aq.nodes.find(n=>/^[WR]0 /.test(n.name)&&n.name.includes(r.UniqueId));if(node){this.originals.set(r.UniqueId,node);this.originalRecords.set(r.UniqueId,r);this.originalHidden.push(node);}}
   this.originalHidden.push(...aq.nodes.filter(n=>n.name.startsWith('Batched substrate surface')||n.name.startsWith('Deposited substrate')));
+ }
+ async ensureCatalog(progress=()=>{}){
+  if(this.catalog)return this.catalog;
+  if(!this._catalogPending){
+   this._catalogPending=(async()=>{
+    const checked=async r=>{if(!r.ok)throw new Error('资源读取失败 '+r.url);return r;};
+    const buffer=await fetch('/assets/catalog-geometry.bin').then(checked).then(r=>r.arrayBuffer());
+    this.catalog=await loadAquarium(progress,{pack:this.data.assets,buffer});
+    return this.catalog;
+   })();
+  }
+  return this._catalogPending;
  }
  cloneOriginal(record){const original=this.originals.get(record.UniqueId);if(!original)return null;const node=original.clone(true);node.visible=true;const world=mirror.clone().multiply(original.matrixWorld);world.decompose(node.position,node.quaternion,node.scale);
   const before=this.originalRecords.get(record.UniqueId),delta=new T.Matrix4().compose(vec(record.Position),rotation(record.Rotation),vec(record.Scale)).multiply(new T.Matrix4().compose(vec(before.Position),rotation(before.Rotation),vec(before.Scale)).invert());node.applyMatrix4(delta);return node;
  }
  plant(record,soil){const species=this.definitions.findIndex(d=>d.TypeId===record.TypeId),definition=this.definitions[species];if(species<0)throw new Error('未知水草品种');const before=this.originalRecords.get(record.UniqueId),original=this.originals.get(record.UniqueId);let node,formula=0;
   if(original&&record.Stage===before.Stage&&record.Growth===before.Growth&&JSON.stringify(record.Cuts)===JSON.stringify(before.Cuts))node=this.cloneOriginal(record);
-  else {const variant=stableSeed(record.UniqueId)%3,key=`plant-${species}-${variant}-${record.Stage}`,entry=this.entries.get(key);if(!entry)throw new Error('植物阶段资产缺失 '+key);node=this.catalog.nodes[entry.root].clone(true);copyTransform(node,record);const width=species===2?(record.Stage===0?1.85:record.Stage===1?1.2:1):1;
+  else {const variant=stableSeed(record.UniqueId)%3,key=`plant-${species}-${variant}-${record.Stage}`,entry=this.entries.get(key);if(!entry)throw new Error('植物阶段资产缺失 '+key);if(!this.catalog)throw new Error('水草目录尚未加载');node=this.catalog.nodes[entry.root].clone(true);copyTransform(node,record);const width=species===2?(record.Stage===0?1.85:record.Stage===1?1.2:1):1;
    let height=1;if(record.UseContinuousVisualGrowth){const heights=[0,1,2,3].map(stage=>this.entries.get(`plant-${species}-${variant}-${stage}`).height),desired=plantHeight(record,heights,definition,species);formula=desired/entry.height;height=formula;
     const q=rotation(record.Rotation),up=vec([0,1,0]).applyQuaternion(q).y,right=vec([1,0,0]).applyQuaternion(q).y,forward=vec([0,0,1]).applyQuaternion(q).y,target=desired*record.Scale.y*up;let fit=Infinity;
     if(up>.1)node.traverse(o=>{if(!o.isMesh)return;const p=o.geometry.attributes.position;for(let i=0;i<p.count;i++){const coef=p.getY(i)*record.Scale.y*up;if(coef>1e-6)fit=Math.min(fit,(target-p.getX(i)*record.Scale.x*width*right-p.getZ(i)*record.Scale.z*width*forward)/coef);}});if(Number.isFinite(fit)&&fit>0)height=fit;
@@ -40,11 +66,11 @@ export class TankRuntime {
  }
  rescalePlants(plants){if(!this.current)return;for(const record of plants){const node=this.current.entities.get(record.UniqueId);if(!(node?.userData.plantFormula>0))continue;const species=this.definitions.findIndex(d=>d.TypeId===record.TypeId);if(species<0)continue;const variant=stableSeed(record.UniqueId)%3,entry=this.entries.get(`plant-${species}-${variant}-${record.Stage}`);if(!entry?.height)continue;const heights=[0,1,2,3].map(stage=>this.entries.get(`plant-${species}-${variant}-${stage}`)?.height||entry.height),desired=plantHeight(record,heights,this.definitions[species],species),formula=desired/entry.height,prev=node.userData.plantFormula;if(!(formula>0)||Math.abs(formula-prev)<0.002)continue;node.scale.y*=formula/prev;node.userData.plantFormula=formula;}}
  hardscape(record){const entry=this.entries.get(record.TypeId);if(!entry)throw new Error('木石资产缺失 '+record.TypeId);let node=this.cloneOriginal(record);
-  if(!node){node=this.catalog.nodes[entry.root].clone(true);copyTransform(node,record);if(entry.baseKey){const content=new T.Group();for(const child of [...node.children])content.add(child);content.scale.setScalar(entry.fixedScale);node.add(content);}}
+  if(!node){if(!this.catalog)throw new Error('木石目录尚未加载');node=this.catalog.nodes[entry.root].clone(true);copyTransform(node,record);if(entry.baseKey){const content=new T.Group();for(const child of [...node.children])content.add(child);content.scale.setScalar(entry.fixedScale);node.add(content);}}
   node.name=(entry.wood?'W0 ':'R0 ')+record.UniqueId;node.userData={entity:record.UniqueId,kind:entry.wood?2:1};node.traverse(o=>{if(o.isMesh)o.userData={...o.userData,entity:record.UniqueId,kind:entry.wood?2:1};});return node;
  }
  validateFloraHosts(tank){const hosts=new Map();for(const r of tank.Flora||[]){if(!r.Host)continue;if(!hosts.has(r.Host)){const host=this.hardscape(tank.Hardscape.find(h=>h.UniqueId===r.Host));host.updateMatrixWorld(true);hosts.set(r.Host,{matrix:host.matrixWorld,box:new T.Box3().setFromObject(host)});}const {matrix,box}=hosts.get(r.Host),p=new T.Vector3(...r.Local).applyMatrix4(matrix);if(Math.abs(p.x)>.65||Math.abs(p.z)>.35||p.y<-.1||p.y>.65||box.distanceToPoint(p)>.03)throw new Error('附生水草的附着位置超出木石');}}
- async prepare(save,reuse=null,{navigation=true,mutableSolids=false}={}){const soil=new Substrate(this.settings,save.Tank.Substrate),group=new T.Group(),entities=new Map(),sameSoil=reuse&&JSON.stringify(save.Tank.Substrate)===JSON.stringify(reuse.save.Tank.Substrate),soilView=new SoilView(this.aq,soil,sameSoil?reuse.soilView:null,this.sourceSoil);group.add(soilView.root);
+ async prepare(save,reuse=null,{navigation=true,mutableSolids=false}={}){if(needsCatalogMeshes(this,save))await this.ensureCatalog();const soil=new Substrate(this.settings,save.Tank.Substrate),group=new T.Group(),entities=new Map(),sameSoil=reuse&&JSON.stringify(save.Tank.Substrate)===JSON.stringify(reuse.save.Tank.Substrate),soilView=new SoilView(this.aq,soil,sameSoil?reuse.soilView:null,this.sourceSoil);group.add(soilView.root);
   let habitat,floraItems=[];
   try{for(const record of save.Tank.Hardscape){if(this.entries.get(record.TypeId)?.legacy&&!this.originals.has(record.UniqueId)&&['R04','R06'].includes(record.TypeId))continue;const node=this.hardscape(record);entities.set(record.UniqueId,node);group.add(node);}
    for(const record of save.Tank.Plants){const node=this.plant(record,soil);entities.set(record.UniqueId,node);group.add(node);}group.updateMatrixWorld(true);

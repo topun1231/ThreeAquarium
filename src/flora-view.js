@@ -151,7 +151,7 @@ const COLORS = {
   carpet:new T.Color('#3f8c38'), moss:new T.Color('#3a5c2c'), mossTip:new T.Color('#6a8a3c'),
 };
 
-function swayMaterial(name, {color = '#ffffff', roughness = 0.62, amplitude, height, time, thin = 0.18, clearcoat = 0}) {
+function swayMaterial(name, {color = '#ffffff', roughness = 0.62, amplitude, height, time, thin = 0.18, clearcoat = 0, clipNodes = false}) {
   const material = clearcoat > 0
     ? new T.MeshPhysicalMaterial({name, color, roughness, metalness:0, vertexColors:true, side:T.DoubleSide, clearcoat, clearcoatRoughness:0.32})
     : new T.MeshStandardMaterial({name, color, roughness, metalness:0, vertexColors:true, side:T.DoubleSide});
@@ -160,9 +160,10 @@ function swayMaterial(name, {color = '#ffffff', roughness = 0.62, amplitude, hei
     shader.uniforms.aqFloraTime = time;
     shader.uniforms.aqFloraSway = {value:new T.Vector2(amplitude, height)};
     shader.uniforms.aqFloraThin = {value:thin};
-    shader.vertexShader = 'attribute vec4 aqStem;\nuniform float aqFloraTime;\nuniform vec2 aqFloraSway;\n' + shader.vertexShader.replace('#include <project_vertex>', `
+    shader.vertexShader = (clipNodes ? 'attribute float aqNode;\nattribute float aqLeaves;\n' : '') + 'attribute vec4 aqStem;\nuniform float aqFloraTime;\nuniform vec2 aqFloraSway;\n' + shader.vertexShader.replace('#include <project_vertex>', `
       #ifdef USE_INSTANCING
       {
+        ${clipNodes ? 'if (aqNode >= 0.0 && aqNode >= aqLeaves) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }' : ''}
         vec3 aqIp = (instanceMatrix * vec4(transformed, 1.0)).xyz;
         float aqH = clamp(max(0.0, aqIp.y - aqStem.y) / aqFloraSway.y, 0.0, 1.6);
         float aqPh = aqStem.w;
@@ -184,7 +185,7 @@ function swayMaterial(name, {color = '#ffffff', roughness = 0.62, amplitude, hei
       #undef RE_Direct
       #define RE_Direct AQFloraDirect`);
   };
-  material.customProgramCacheKey = () => `flora-sway-v3-${clearcoat > 0 ? 'coat' : 'std'}`;
+  material.customProgramCacheKey = () => `flora-sway-v3-${clearcoat > 0 ? 'coat' : 'std'}${clipNodes ? '-clip' : ''}`;
   return material;
 }
 
@@ -255,10 +256,11 @@ export class FloraView {
   }
 
   installAnubias({models, materials, maps = new Map()}) {
-    this.models = models;
+    this.models = {};
     this.leafKeys = new Set();
+    this.tipNodes = {};
     const shared = materials.map((m, i) => {
-      const material = swayMaterial('Authored anubias ' + i, {amplitude:0.0008, height:0.085, time:this.time, roughness:m.roughness, thin:0.12, clearcoat:m.clearcoat});
+      const material = swayMaterial('Authored anubias ' + i, {amplitude:0.0008, height:0.085, time:this.time, roughness:m.roughness, thin:0.12, clearcoat:m.clearcoat, clipNodes:true});
       material.vertexColors = false;
       material.color.fromArray(m.color);
       material.map = maps.get(m.map) || null;
@@ -266,12 +268,37 @@ export class FloraView {
       this.aq.materials.push(material);
       return material;
     });
-    for (const [species, variants] of Object.entries(models)) for (const [v, model] of variants.entries()) for (const [i, part] of model.parts.entries()) {
-      part.key = species + v + 'part' + i;
-      this.units[part.key] = [part.geometry];
-      this.tips[part.key] = [tipOf(part.geometry)];
-      this.materials[part.key] = shared[part.material];
-      if (part.leaf) this.leafKeys.add(part.key);
+    for (const [species, variants] of Object.entries(models)) {
+      this.models[species] = variants.map((model, v) => {
+        const groups = new Map();
+        for (const part of model.parts) {
+          if (!groups.has(part.material)) groups.set(part.material, []);
+          groups.get(part.material).push(part);
+        }
+        const parts = [];
+        for (const [material, list] of groups) {
+          const geos = list.map(part => {
+            const g = part.geometry.clone();
+            g.setAttribute('aqNode', new T.BufferAttribute(new Float32Array(g.attributes.position.count).fill(part.node), 1));
+            return g;
+          });
+          const geometry = mergeGeometries(geos, false);
+          geos.forEach(g => g.dispose());
+          const key = species + v + 'mat' + material;
+          const leafParts = list.filter(p => p.leaf);
+          this.units[key] = [geometry];
+          this.tips[key] = leafParts.length ? leafParts.map(p => tipOf(p.geometry)) : [tipOf(geometry)];
+          this.tipNodes[key] = leafParts.map(p => p.node);
+          this.materials[key] = shared[material];
+          if (leafParts.length) this.leafKeys.add(key);
+          parts.push({
+            key, material, geometry, leaf:leafParts.length > 0,
+            node:Math.min(...list.map(p => p.node)),
+            nodes:list.map(p => p.node),
+          });
+        }
+        return {...model, parts};
+      });
     }
   }
 
@@ -327,9 +354,9 @@ export class FloraView {
     const buckets = new Map();
     const add = (key, variant, matrix, color, stem, owner) => {
       const name = key + ':' + variant;
-      if (!buckets.has(name)) buckets.set(name, {key, variant, matrices:[], colors:[], stems:[], owners:[]});
+      if (!buckets.has(name)) buckets.set(name, {key, variant, matrices:[], colors:[], stems:[], owners:[], leaves:[]});
       const b = buckets.get(name);
-      b.matrices.push(matrix); b.colors.push(color); b.stems.push(stem); b.owners.push(owner);
+      b.matrices.push(matrix); b.colors.push(color); b.stems.push(stem); b.owners.push(owner); b.leaves.push(owner.leaves ?? 99);
     };
     const soil = scene.soil, habitat = scene.habitat;
     const tmp = {q:new T.Quaternion(), q2:new T.Quaternion(), v:new T.Vector3(), s:new T.Vector3()};
@@ -419,9 +446,10 @@ export class FloraView {
           const pose = new T.Matrix4().compose(anchor, tmp.q.clone(), new T.Vector3(size,size,size));
           const leaves = Math.max(1, Math.ceil(model.leaves * Math.min(1,n/spec.start)));
           for (const part of model.parts) {
-            if (part.node >= leaves) continue;
+            const nodes = part.nodes || [part.node];
+            if (nodes.every(node => node >= 0 && node >= leaves)) continue;
             const color = new T.Color().setScalar(.94 + rand()*.12).offsetHSL(hueShift,0,0);
-            add(part.key, 0, pose.clone(), color, [anchor.x,anchor.y,anchor.z,phase], {id:record.UniqueId,node:part.node});
+            add(part.key, 0, pose.clone(), color, [anchor.x,anchor.y,anchor.z,phase], {id:record.UniqueId,node:part.node,leaves});
           }
         }
       }
@@ -440,26 +468,31 @@ export class FloraView {
         const geometry = this.units[b.key][b.variant].clone();
         const stems = new T.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
         geometry.setAttribute('aqStem', stems);
+        const leafAttr = geometry.attributes.aqNode ? new T.InstancedBufferAttribute(new Float32Array(capacity), 1) : null;
+        if (leafAttr) geometry.setAttribute('aqLeaves', leafAttr);
         const mesh = new T.InstancedMesh(geometry, this.materials[b.key === 'rotalaLeaves' ? 'rotalaLeaves' : b.key], capacity);
         mesh.name = 'Flora ' + name;
         mesh.instanceColor = new T.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
         mesh.receiveShadow = true;
         mesh.frustumCulled = false;
         mesh.userData.flora = true;
-        mesh.userData.tip = this.tips[b.key][b.variant];
         this.root.add(mesh);
-        entry = {mesh, capacity, stems};
+        entry = {mesh, capacity, stems, leafAttr};
         this.meshes.set(name, entry);
       }
-      const {mesh, stems} = entry;
-      mesh.userData.tip = this.tips[b.key][b.variant];
+      const {mesh, stems, leafAttr} = entry;
+      const authoredTips = this.tipNodes?.[b.key];
+      mesh.userData.tip = authoredTips?.length ? this.tips[b.key][0] : this.tips[b.key][b.variant];
+      mesh.userData.tips = authoredTips?.length ? this.tips[b.key] : [this.tips[b.key][b.variant]];
+      mesh.userData.tipNodes = authoredTips || [];
       mesh.castShadow = this.shadows && (['rotalaLeaves', 'rotalaStem'].includes(b.key) || /^(pala|nullified)/.test(b.key));
-      b.matrices.forEach((m, i) => { mesh.setMatrixAt(i, m); mesh.setColorAt(i, b.colors[i]); stems.setXYZW(i, ...b.stems[i]); });
+      b.matrices.forEach((m, i) => { mesh.setMatrixAt(i, m); mesh.setColorAt(i, b.colors[i]); stems.setXYZW(i, ...b.stems[i]); leafAttr?.setX(i, b.leaves[i]); });
       mesh.count = b.matrices.length;
       mesh.userData.owners = b.owners;
       mesh.instanceMatrix.needsUpdate = true;
       mesh.instanceColor.needsUpdate = true;
       stems.needsUpdate = true;
+      if (leafAttr) leafAttr.needsUpdate = true;
       mesh.computeBoundingSphere();
       mesh.visible = true;
     }
@@ -516,31 +549,46 @@ export class FloraView {
       if (!/rotalaLeaves|carpet|moss/.test(name) && !this.leafKeys?.has(key.split(':')[0])) continue;
       const vigor = /rotala/.test(name) ? 1.4 : /pala|nullified/.test(name) ? 0.55 : 0.7;
       const keep = /rotala/.test(name) ? 0.3 : /pala|nullified/.test(name) ? 0.16 : 0.08;
-      const local = mesh.userData.tip || [0.008, 0.001, 0];
+      const locals = Array.isArray(mesh.userData.tips) && mesh.userData.tips.length ? mesh.userData.tips : [mesh.userData.tip || [0.008, 0.001, 0]];
+      const tipNodes = mesh.userData.tipNodes || [];
+      const leafAttr = mesh.geometry.getAttribute('aqLeaves');
       for (let i = 0; i < mesh.count; i++) {
-        if (random(stableSeed(name + ':' + i))() > keep * this.density) continue;
-        mesh.getMatrixAt(i, matrix);
-        tip.set(local[0], local[1], local[2]).applyMatrix4(matrix);
-        const owner = mesh.userData.owners[i];
-        const resolve = () => {
-          const current = this.meshes.get(key)?.mesh;
-          if (!current?.visible) return null;
-          const at = current.userData.owners.findIndex(o => o.id === owner.id && o.node === owner.node);
-          if (at < 0) return null;
-          const m = new T.Matrix4(); current.getMatrixAt(at, m);
-          const point = new T.Vector3(...current.userData.tip).applyMatrix4(m), stem = current.geometry.attributes.aqStem;
-          return swayFloraPoint(point, Array.from(stem.array.subarray(at*4,at*4+4)), current.material.userData.sway, this.time.value);
-        };
-        sites.push({x:tip.x, y:tip.y, z:tip.z, vigor, resolve});
+        const shown = leafAttr ? leafAttr.getX(i) : 99;
+        for (let t = 0; t < locals.length; t++) {
+          if (tipNodes[t] >= shown) continue;
+          if (random(stableSeed(name + ':' + i + ':' + t))() > keep * this.density) continue;
+          mesh.getMatrixAt(i, matrix);
+          const local = locals[t];
+          tip.set(local[0], local[1], local[2]).applyMatrix4(matrix);
+          const owner = mesh.userData.owners[i];
+          const tipIndex = t;
+          const resolve = () => {
+            const current = this.meshes.get(key)?.mesh;
+            if (!current?.visible) return null;
+            const at = current.userData.owners.findIndex(o => o.id === owner.id && o.node === owner.node);
+            if (at < 0) return null;
+            const shownNow = current.geometry.getAttribute('aqLeaves')?.getX(at) ?? 99;
+            if ((current.userData.tipNodes?.[tipIndex] ?? 0) >= shownNow) return null;
+            const m = new T.Matrix4(); current.getMatrixAt(at, m);
+            const localNow = current.userData.tips?.[tipIndex] || current.userData.tip;
+            const point = new T.Vector3(...localNow).applyMatrix4(m), stem = current.geometry.attributes.aqStem;
+            return swayFloraPoint(point, Array.from(stem.array.subarray(at*4,at*4+4)), current.material.userData.sway, this.time.value);
+          };
+          sites.push({x:tip.x, y:tip.y, z:tip.z, vigor, resolve});
+        }
       }
     }
     return sites;
   }
 
   stats() {
-    let instances = 0, draws = 0;
-    for (const {mesh} of this.meshes.values()) if (mesh.visible && mesh.count) { instances += mesh.count; draws++; }
-    return {instances, draws};
+    let instances = 0, draws = 0, visibleLeaves = 0;
+    for (const {mesh} of this.meshes.values()) if (mesh.visible && mesh.count) {
+      instances += mesh.count; draws++;
+      const attr = mesh.geometry.getAttribute('aqLeaves');
+      if (attr) for (let i = 0; i < mesh.count; i++) visibleLeaves += attr.getX(i);
+    }
+    return {instances, draws, visibleLeaves};
   }
 }
 
