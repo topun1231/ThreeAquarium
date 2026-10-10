@@ -1,0 +1,184 @@
+{
+  "errors": [],
+  "samples": [
+    {
+      "interval": 0,
+      "view": "tank",
+      "frames": 599,
+      "fps": 59.93836055075248,
+      "p95ms": 16.80000000000109,
+      "over50ms": 0,
+      "elapsed": 19914.14999985046,
+      "maxBodyDepth": 0.00013319496605191262,
+      "finite": true,
+      "swimming": 0,
+      "memory": {
+        "geometries": 55,
+        "textures": 97
+      },
+      "heapMB": 589.8136682510376
+    },
+    {
+      "interval": 1,
+      "view": "tank",
+      "frames": 598,
+      "fps": 59.737872612483,
+      "p95ms": 16.80000000000291,
+      "over50ms": 0,
+      "elapsed": 19924.149999850313,
+      "maxBodyDepth": 0.00013319496605191262,
+      "finite": true,
+      "swimming": 0,
+      "memory": {
+        "geometries": 55,
+        "textures": 97
+      },
+      "heapMB": 495.6077003479004
+    },
+    {
+      "interval": 2,
+      "view": "tank",
+      "frames": 599,
+      "fps": 59.738109722651615,
+      "p95ms": 16.80000000000291,
+      "over50ms": 0,
+      "elapsed": 19934.149999850168,
+      "maxBodyDepth": 0.0002985753789347945,
+      "finite": true,
+      "swimming": 0,
+      "memory": {
+        "geometries": 55,
+        "textures": 97
+      },
+      "heapMB": 479.49432373046875
+    },
+    {
+      "interval": 3,
+      "view": "tank",
+      "frames": 600,
+      "fps": 59.938263588503816,
+      "p95ms": 16.80000000000291,
+      "over50ms": 0,
+      "elapsed": 19944.19999985002,
+      "maxBodyDepth": 0.00018212394142433624,
+      "finite": true,
+      "swimming": 0,
+      "memory": {
+        "geometries": 55,
+        "textures": 97
+      },
+      "heapMB": 507.8800048828125
+    },
+    {
+      "interval": 4,
+      "view": "near",
+      "frames": 597,
+      "fps": 59.538650257801365,
+      "p95ms": 16.80000000000291,
+      "over50ms": 0,
+      "elapsed": 19954.199999849876,
+      "maxBodyDepth": 0.00029270285503423866,
+      "finite": true,
+      "swimming": 0,
+      "memory": {
+        "geometries": 55,
+        "textures": 97
+      },
+      "heapMB": 489.3643112182617
+    },
+    {
+      "interval": 5,
+      "view": "near",
+      "frames": 601,
+      "fps": 59.937569187501886,
+      "p95ms": 16.80000000000291,
+      "over50ms": 0,
+      "elapsed": 19964.24999984973,
+      "maxBodyDepth": 0.00018212394142433624,
+      "finite": true,
+      "swimming": 0,
+      "memory": {
+        "geometries": 55,
+        "textures": 97
+      },
+      "heapMB": 511.2541847229004
+    },
+    {
+      "interval": 6,
+      "view": "tank",
+      "frames": 630,
+      "fps": 59.74848732004327,
+      "p95ms": 16.80000000000291,
+      "over50ms": 0,
+      "elapsed": 19974.799999849576,
+      "maxBodyDepth": 0.00029270285503423866,
+      "finite": true,
+      "swimming": 0,
+      "memory": {
+        "geometries": 55,
+        "textures": 97
+      },
+      "heapMB": 489.5652770996094
+    },
+    {
+      "interval": 7,
+      "view": "tank",
+      "frames": 598,
+      "fps": 59.63837999022645,
+      "p95ms": 16.80000000000291,
+      "over50ms": 0,
+      "elapsed": 19984.79999984943,
+      "maxBodyDepth": 0.00018212394142433624,
+      "finite": true,
+      "swimming": 0,
+      "memory": {
+        "geometries": 55,
+        "textures": 97
+      },
+      "heapMB": 493.01309967041016
+    },
+    {
+      "interval": 8,
+      "view": "tank",
+      "frames": 598,
+      "fps": 59.738469376542135,
+      "p95ms": 16.80000000000291,
+      "over50ms": 0,
+      "elapsed": 19994.799999849285,
+      "maxBodyDepth": 0.00013319496605191262,
+      "finite": true,
+      "swimming": 0,
+      "memory": {
+        "geometries": 55,
+        "textures": 97
+      },
+      "heapMB": 510.6708450317383
+    }
+  ],
+  "add50ms": 393,
+  "summary": {
+    "agents": 50,
+    "shadows": true,
+    "viewport": [
+      1600,
+      900
+    ],
+    "gpu": "ANGLE (AMD, AMD Radeon RX 6600 (0x000073FF) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "metrics": {
+      "decisions": 260,
+      "arrivals": 130,
+      "blocked": 479,
+      "peerWaits": 19522,
+      "consumed": 7.186283630593489,
+      "backwardCorrections": 2461,
+      "routineSwims": 7
+    },
+    "feet": {
+      "probes": 6478,
+      "maxSlip": 0.002556167034708602
+    },
+    "drawCalls": 1149,
+    "triangles": 23931654
+  },
+  "restoreAfterSoak": true
+}

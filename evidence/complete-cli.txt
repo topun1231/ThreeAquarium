@@ -1,0 +1,42 @@
+### Result
+{"checks":["original Unity tank and population files import together","v4 export/import restores full tank","malformed view does not partially replace game","storage quota leaves both live tank and previous save intact","new empty tank gets fresh identities and original initial needs","dry tank cannot advance creature ecology","holding pour modifies real soil volume","Escape rolls back uncommitted soil","completed soil stroke persists","soil undo restores exact prior volume","previous tank archive restores original layout","near-view foot contact solver runs with finite output","original action Rest","original action Walk","original action Graze","original action Groom","original action RoutineSwim","original action EscapeSwim","broken storage survives reload and manual save","no shader or browser errors"],"errors":[],"feet":{"probes":484,"maxSlip":0.0007952181144822304}}
+### Ran Playwright code
+```js
+await (async page=>{
+ const report={checks:[],errors:[]},check=(value,label)=>{if(!value)throw new Error(label);report.checks.push(label);};
+ page.on('pageerror',e=>report.errors.push(e.message));page.on('console',m=>{if(m.type()==='error')report.errors.push(m.text());});
+ await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:90000});
+ const keys=['aquarium.three.creatures.v1','aquarium.three.migration.v1','aquarium.three.previous'],before=await page.evaluate(keys=>Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)])),keys);
+ try{
+  await page.locator('#pause').click();await page.evaluate(()=>aquarium.game.ensure());const original=await page.evaluate(()=>aquarium.game.snapshot());
+  await page.locator('#unity-import').setInputFiles(['tools/seed.json','tools/seed-creatures.json']);await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('只读导入'),null,{timeout:30000});
+  check(await page.evaluate(()=>aquarium.game.data.Tank.Plants.length===89&&aquarium.world.agents.length===5),'original Unity tank and population files import together');
+  const saved=await page.evaluate(()=>({version:4,view:aquarium.progress(),game:aquarium.game.snapshot()}));
+  await page.locator('#import').setInputFiles({name:'full-roundtrip.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(saved))});await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('完整鱼缸进度已恢复'));
+  check(await page.evaluate(s=>JSON.stringify(aquarium.game.data.Tank)===JSON.stringify(s.game.session.Tank),saved),'v4 export/import restores full tank');
+  const stable=await page.evaluate(()=>localStorage.getItem('aquarium.three.creatures.v1'));
+  const bad=structuredClone(saved);bad.view.camera=[null,0,0];await page.locator('#import').setInputFiles({name:'bad-view.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(bad))});await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('导入失败'));
+  check(await page.evaluate(s=>localStorage.getItem('aquarium.three.creatures.v1')===s,stable),'malformed view does not partially replace game');
+  check(await page.evaluate(async()=>{const g=aquarium.game,before=JSON.stringify(g.data),raw=localStorage.getItem('aquarium.three.creatures.v1'),set=Storage.prototype.setItem;Storage.prototype.setItem=()=>{throw new DOMException('test quota','QuotaExceededError');};let failed=false;try{const n=structuredClone(g.data);n.Tank.Environment.LightOn=!n.Tank.Environment.LightOn;await g.transact(n);}catch{failed=true;}finally{Storage.prototype.setItem=set;}return failed&&JSON.stringify(g.data)===before&&localStorage.getItem('aquarium.three.creatures.v1')===raw;}),'storage quota leaves both live tank and previous save intact');
+  await page.locator('#tank-menu').click();await page.evaluate(()=>window.confirm=()=>true);await page.locator('#tank-empty').click();await page.waitForFunction(()=>!aquarium.game.busy);
+  check(await page.evaluate(s=>!aquarium.game.data.Tank.Setup.Filled&&aquarium.world.agents.every(a=>!s.creatures.some(c=>c.CreatureId===a.data.CreatureId))&&aquarium.world.agents[0].data.Needs.Hunger===.28,original),'new empty tank gets fresh identities and original initial needs');
+  check(await page.locator('#grow-day').isDisabled(),'dry tank cannot advance creature ecology');
+  await page.locator('#top-view').click();await page.locator('#setup-tool').selectOption('pour');await page.waitForTimeout(300);
+  const at=await page.evaluate(()=>{const a=aquarium,p=a.controls.target.clone().set(0,0,0).project(a.camera);return {x:(p.x+1)*innerWidth/2,y:(1-p.y)*innerHeight/2};});
+  const volume=await page.evaluate(()=>aquarium.game.runtime.current.soil.volume());await page.mouse.move(at.x,at.y);await page.mouse.down();await page.waitForFunction(v=>aquarium.game.runtime.current.soil.volume()>v,volume,{timeout:5000});check(await page.evaluate(v=>aquarium.game.runtime.current.soil.volume()>v,volume),'holding pour modifies real soil volume');await page.keyboard.press('Escape');await page.mouse.up();check(await page.evaluate(v=>Math.abs(aquarium.game.runtime.current.soil.volume()-v)<1e-12,volume),'Escape rolls back uncommitted soil');
+  await page.locator('#top-view').click();await page.locator('#top-view').click();await page.waitForTimeout(300);const point=await page.evaluate(()=>{const p=aquarium.controls.target.clone().set(0,0,0).project(aquarium.camera);return {x:(p.x+1)*innerWidth/2,y:(1-p.y)*innerHeight/2};});await page.mouse.move(point.x,point.y);await page.mouse.down();await page.waitForFunction(v=>aquarium.game.runtime.current.soil.volume()>v,volume,{timeout:5000});await page.mouse.up();await page.waitForFunction(()=>!aquarium.game.busy);check(await page.evaluate(v=>aquarium.game.runtime.current.soil.volume()>v,volume),'completed soil stroke persists');
+  await page.locator('#setup-undo').click();await page.waitForFunction(()=>!aquarium.game.busy);check(await page.evaluate(v=>Math.abs(aquarium.game.runtime.current.soil.volume()-v)<1e-10,volume),'soil undo restores exact prior volume');
+  await page.locator('#tank-previous').click();await page.waitForFunction(()=>!aquarium.game.busy);check(await page.evaluate(()=>aquarium.game.data.Tank.Plants.length===89),'previous tank archive restores original layout');
+  await page.evaluate(s=>aquarium.game.restore(s),original);await page.locator('#reset').click();await page.locator('#pause').click();
+  await page.evaluate(()=>{const a=aquarium.aq.animals[0],p=a.rig.getWorldPosition(aquarium.controls.target.clone());aquarium.controls.target.copy(p);aquarium.camera.position.copy(p).add({x:.12,y:.04,z:.10});aquarium.controls.update();});await page.waitForTimeout(2000);
+  report.feet=await page.evaluate(()=>({probes:aquarium.feet.probes,maxSlip:aquarium.feet.maxSlip}));check(report.feet.probes>0&&Number.isFinite(report.feet.maxSlip),'near-view foot contact solver runs with finite output');
+  for(const name of ['Rest','Walk','Graze','Groom','RoutineSwim','EscapeSwim']){await page.locator('#action').selectOption(name);await page.waitForTimeout(150);check(await page.evaluate(n=>aquarium.aq.animals.every(a=>a.active===n&&a.rig.matrixWorld.elements.every(Number.isFinite)),name),'original action '+name);}
+  await page.locator('#action').selectOption('Rest');await page.screenshot({path:'evidence/full-near.png'});await page.locator('#action').selectOption('Auto');await page.locator('#reset').click();await page.screenshot({path:'evidence/full-runtime.png'});
+  await page.evaluate(()=>{aquarium.renderer.setAnimationLoop(null);localStorage.setItem('aquarium.three.creatures.v1','{"broken":');Storage.prototype.setItem=function(){};});await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:90000});await page.locator('#save').click();check(await page.evaluate(()=>localStorage.getItem('aquarium.three.creatures.v1')==='{"broken":'),'broken storage survives reload and manual save');
+  check(report.errors.length===0,'no shader or browser errors');
+ }catch(e){report.failure=e.message;report.message=await page.locator('#message').textContent();}
+ finally{await page.evaluate(before=>{aquarium.renderer.setAnimationLoop(null);for(const [key,value]of Object.entries(before)){if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}Storage.prototype.setItem=function(){};},before);await page.reload();}
+ return report;
+}
+)(page);
+```

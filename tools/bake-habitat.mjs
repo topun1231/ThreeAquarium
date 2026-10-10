@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import {createHabitat,buildGraph,paths,nearest,vec} from '../src/habitat.js';
+const pack=JSON.parse(fs.readFileSync('public/assets/scene.json','utf8'));
+const raw=fs.readFileSync('public/assets/geometry.bin'),buffer=raw.buffer.slice(raw.byteOffset,raw.byteOffset+raw.byteLength);
+const seed=JSON.parse(fs.readFileSync('tools/seed-creatures.json','utf8'));
+const source='D:/Aquarium_WorkEvidence/Current/AQ_TANKSTYLE001/PreviewProject/Assets/_Aquarium/ECOCORE001/Profiles/RedCherryShrimp_Profile.asset';
+const profile=Object.fromEntries([...fs.readFileSync(source,'utf8').matchAll(/^  (\w+): (-?\d+(?:\.\d+)?)\r?$/gm)].map(m=>[m[1],Number(m[2])]));
+const start=performance.now(),habitat=await createHabitat(pack,buffer,console.log);
+console.log('BVH ms',performance.now()-start);
+const anchors=buildGraph(habitat,seed.Food);
+fs.writeFileSync('public/assets/behavior.json',JSON.stringify({version:1,tankId:seed.TankId,profile,creatures:seed.Creatures,simulationSeconds:seed.SimulationSeconds,anchors:anchors.map(a=>({...a,position:a.position.toArray(),normal:a.normal.toArray()}))}));
+console.log({anchors:anchors.length,edges:anchors.reduce((s,a)=>s+a.edges.length,0)/2,ms:performance.now()-start,reachable:seed.Creatures.map(c=>paths(anchors,nearest(anchors,vec(c.Position))).costs.size)});

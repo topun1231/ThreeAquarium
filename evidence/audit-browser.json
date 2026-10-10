@@ -1,0 +1,122 @@
+{
+  "checks": [
+    {
+      "label": "population resize 1",
+      "pass": true,
+      "detail": {
+        "count": 1,
+        "finite": true,
+        "memory": {
+          "geometries": 54,
+          "textures": 48
+        }
+      }
+    },
+    {
+      "label": "population resize 50",
+      "pass": true,
+      "detail": {
+        "count": 50,
+        "finite": true,
+        "memory": {
+          "geometries": 54,
+          "textures": 97
+        }
+      }
+    },
+    {
+      "label": "population resize 1",
+      "pass": true,
+      "detail": {
+        "count": 1,
+        "finite": true,
+        "memory": {
+          "geometries": 54,
+          "textures": 48
+        }
+      }
+    },
+    {
+      "label": "population resize 50",
+      "pass": true,
+      "detail": {
+        "count": 50,
+        "finite": true,
+        "memory": {
+          "geometries": 54,
+          "textures": 97
+        }
+      }
+    },
+    {
+      "label": "population resize 5",
+      "pass": true,
+      "detail": {
+        "count": 5,
+        "finite": true,
+        "memory": {
+          "geometries": 54,
+          "textures": 52
+        }
+      }
+    },
+    {
+      "label": "light save failure rolls back live environment",
+      "pass": true
+    },
+    {
+      "label": "restoring a tank retains selected animation inspection mode",
+      "pass": true
+    },
+    {
+      "label": "imported camera is persisted for next launch",
+      "pass": true
+    },
+    {
+      "label": "dry tank reload preserves stock and tank identity",
+      "pass": true,
+      "detail": {
+        "before": "471fcc93ed344203bdc1497f4115ae66",
+        "after": "471fcc93ed344203bdc1497f4115ae66"
+      }
+    },
+    {
+      "label": "dry tank remains empty",
+      "pass": true
+    },
+    {
+      "label": "dry tank does not advance shrimp ecology offline",
+      "pass": true
+    },
+    {
+      "label": "losing window focus cancels soil gesture",
+      "pass": true
+    },
+    {
+      "label": "light toggle updates environment",
+      "pass": true
+    },
+    {
+      "label": "light state survives reload",
+      "pass": true
+    },
+    {
+      "label": "arrow key moves camera",
+      "pass": true
+    },
+    {
+      "label": "quiet mode hides interface",
+      "pass": true
+    },
+    {
+      "label": "Escape restores interface",
+      "pass": true
+    },
+    {
+      "label": "no unexpected browser errors",
+      "pass": true,
+      "detail": []
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,8 @@
+{
+  "plants": 89,
+  "changedSurfaces": 1,
+  "reusedSurfaces": 109,
+  "anchors": 1828,
+  "checks": "records, validation, support, graph, immutable source, roundtrip, 60s simulation",
+  "milliseconds": 1851.2862999999998
+}

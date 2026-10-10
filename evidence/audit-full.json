@@ -1,0 +1,32 @@
+{
+  "checks": [
+    "full game reload succeeds",
+    "editable scene retains original plants and visible wood",
+    "editable graph retains legal shrimp contacts",
+    "full restore retains creature identity and personality",
+    "50 independent shrimp spawned",
+    "50 shrimp survive reload",
+    "population reduction frees extra rigs",
+    "empty dry tank hides creatures and setup objects",
+    "full tank restored after empty setup"
+  ],
+  "errors": [],
+  "baseline": {
+    "anchors": 2623,
+    "surfaces": 110,
+    "depth": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "capacity": {
+    "count": 50,
+    "geometries": 71,
+    "textures": 97,
+    "triangles": 23931150,
+    "drawCalls": 1146
+  }
+}

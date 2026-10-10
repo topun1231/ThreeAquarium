@@ -1,0 +1,29 @@
+{
+  "checks": [
+    "original Unity tank and population files import together",
+    "v4 export/import restores full tank",
+    "malformed view does not partially replace game",
+    "storage quota leaves both live tank and previous save intact",
+    "new empty tank gets fresh identities and original initial needs",
+    "dry tank cannot advance creature ecology",
+    "holding pour modifies real soil volume",
+    "Escape rolls back uncommitted soil",
+    "completed soil stroke persists",
+    "soil undo restores exact prior volume",
+    "previous tank archive restores original layout",
+    "near-view foot contact solver runs with finite output",
+    "original action Rest",
+    "original action Walk",
+    "original action Graze",
+    "original action Groom",
+    "original action RoutineSwim",
+    "original action EscapeSwim",
+    "broken storage survives reload and manual save",
+    "no shader or browser errors"
+  ],
+  "errors": [],
+  "feet": {
+    "probes": 952,
+    "maxSlip": 0.0016008503210800482
+  }
+}

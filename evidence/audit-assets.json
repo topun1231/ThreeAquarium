@@ -1,0 +1,26 @@
+{
+  "packs": [
+    {
+      "json": "scene.json",
+      "geometries": 53,
+      "draws": 180,
+      "vertices": 1111591,
+      "triangles": 1693559,
+      "textures": 37,
+      "bytes": 68366356
+    },
+    {
+      "json": "catalog.json",
+      "geometries": 63,
+      "draws": 134,
+      "vertices": 598975,
+      "triangles": 993736,
+      "textures": 30,
+      "bytes": 41655264
+    }
+  ],
+  "errors": [],
+  "assetMiB": 345.1961889266968,
+  "distMiB": 0.7255592346191406,
+  "catalogEntries": 68
+}

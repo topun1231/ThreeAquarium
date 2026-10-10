@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-09T16:38:11.693Z",
+  "checks": [
+    "native arrow key pans camera",
+    "R restores imported hero camera",
+    "native mouse selects shrimp",
+    "six animation clips produce finite bone transforms",
+    "animation never moves locomotion root",
+    "walking animation changes joint poses",
+    "pause freezes animation time",
+    "browser viewpoint survives reload",
+    "invalid save rejected visibly",
+    "shadows stay enabled",
+    "approved NearMeshB geometry retained",
+    "no runtime, shader or WebGL errors"
+  ],
+  "errors": [],
+  "runtime": {
+    "width": 1600,
+    "height": 900,
+    "shadows": true,
+    "animals": 5,
+    "plants": 89,
+    "hardscape": 8,
+    "skinTriangles": [
+      83769,
+      83769,
+      83769,
+      83769,
+      83769
+    ],
+    "gpu": "ANGLE (AMD, AMD Radeon RX 6600 (0x000073FF) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "fps": 59.94240171455363,
+    "p95ms": 16.899999999999636,
+    "programs": 19,
+    "drawCalls": 624
+  }
+}

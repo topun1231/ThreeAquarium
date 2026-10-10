@@ -1,0 +1,188 @@
+
+> three-aquarium@0.1.0 test
+> node --test tests/*.test.mjs
+
+TAP version 13
+# Subtest: restoring a swimming pose cannot leave a resting shrimp suspended above its surface
+ok 1 - restoring a swimming pose cannot leave a resting shrimp suspended above its surface
+  ---
+  duration_ms: 22.4155
+  type: 'test'
+  ...
+# Subtest: blocked return turn lands gradually instead of ending the swim in midair
+ok 2 - blocked return turn lands gradually instead of ending the swim in midair
+  ---
+  duration_ms: 2.1553
+  type: 'test'
+  ...
+# Subtest: utility scores retain Unity species coefficients
+ok 3 - utility scores retain Unity species coefficients
+  ---
+  duration_ms: 0.2889
+  type: 'test'
+  ...
+# Subtest: head is -X and path query respects cooled edges
+ok 4 - head is -X and path query respects cooled edges
+  ---
+  duration_ms: 1.213
+  type: 'test'
+  ...
+# Subtest: food discovery is staggered; feeding changes hunger only when grazing
+ok 5 - food discovery is staggered; feeding changes hunger only when grazing
+  ---
+  duration_ms: 6.166
+  type: 'test'
+  ...
+# Subtest: snapshot validation preserves identities and rejects malformed inputs before mutation
+ok 6 - snapshot validation preserves identities and rejects malformed inputs before mutation
+  ---
+  duration_ms: 8.2528
+  type: 'test'
+  ...
+# Subtest: ten-minute real-scene run retains safe surfaces, independent behavior and useful movement
+ok 7 - ten-minute real-scene run retains safe surfaces, independent behavior and useful movement
+  ---
+  duration_ms: 3464.2328
+  type: 'test'
+  ...
+# Subtest: rounded REAL002 proxy registers the wood lip contact within tolerance
+ok 8 - rounded REAL002 proxy registers the wood lip contact within tolerance
+  ---
+  duration_ms: 0.2365
+  type: 'test'
+  ...
+# Subtest: online ecological credit still reaches manually observed shrimp and food surfaces
+ok 9 - online ecological credit still reaches manually observed shrimp and food surfaces
+  ---
+  duration_ms: 2.1798
+  type: 'test'
+  ...
+# Subtest: every saved plant including primary maps uniquely; no edits retain every original field
+ok 10 - every saved plant including primary maps uniquely; no edits retain every original field
+  ---
+  duration_ms: 6.7039
+  type: 'test'
+  ...
+# Subtest: invalid edits reject foreign identity, nonfinite coordinates, duplicate ids, tank edges, crowding and wood cover
+ok 11 - invalid edits reject foreign identity, nonfinite coordinates, duplicate ids, tank edges, crowding and wood cover
+  ---
+  duration_ms: 4.9577
+  type: 'test'
+  ...
+# Subtest: plant edit moves contact anchors, reuses untouched BVHs, preserves food/identities and safely restores
+ok 12 - plant edit moves contact anchors, reuses untouched BVHs, preserves food/identities and safely restores
+  ---
+  duration_ms: 1946.5275
+  type: 'test'
+  ...
+# Subtest: moving a plant currently occupied by a shrimp is rejected before mutation
+ok 13 - moving a plant currently occupied by a shrimp is rejected before mutation
+  ---
+  duration_ms: 2.5263
+  type: 'test'
+  ...
+# Subtest: invalid or foreign browser saves never replace progress
+ok 14 - invalid or foreign browser saves never replace progress
+  ---
+  duration_ms: 2.2014
+  type: 'test'
+  ...
+# Subtest: binary reader rejects malformed byte ranges
+ok 15 - binary reader rejects malformed byte ranges
+  ---
+  duration_ms: 0.4151
+  type: 'test'
+  ...
+# Subtest: individual seeds persist across reload
+ok 16 - individual seeds persist across reload
+  ---
+  duration_ms: 0.8268
+  type: 'test'
+  ...
+# Subtest: exported scene has original stock, complete skeletons and animation tracks
+ok 17 - exported scene has original stock, complete skeletons and animation tracks
+  ---
+  duration_ms: 254.2562
+  type: 'test'
+  ...
+# Subtest: selected upper stone seats after its base; removing support reseats it on soil
+ok 18 - selected upper stone seats after its base; removing support reseats it on soil
+  ---
+  duration_ms: 50.684
+  type: 'test'
+  ...
+# Subtest: placement rejects wall overhang before commit
+ok 19 - placement rejects wall overhang before commit
+  ---
+  duration_ms: 1.5211
+  type: 'test'
+  ...
+# Subtest: editable solid candidates cannot mutate cached live collision geometry
+ok 20 - editable solid candidates cannot mutate cached live collision geometry
+  ---
+  duration_ms: 4.0248
+  type: 'test'
+  ...
+# Subtest: population keeps source personality and validates imported identities
+ok 21 - population keeps source personality and validates imported identities
+  ---
+  duration_ms: 5.1052
+  type: 'test'
+  ...
+# Subtest: leaf collision flow is bounded, deterministic and leaves root still
+ok 22 - leaf collision flow is bounded, deterministic and leaves root still
+  ---
+  duration_ms: 5.3049
+  type: 'test'
+  ...
+# Subtest: offline credit matches full, transition, tail and cap; backwards clocks grant nothing
+ok 23 - offline credit matches full, transition, tail and cap; backwards clocks grant nothing
+  ---
+  duration_ms: 1.6512
+  type: 'test'
+  ...
+# Subtest: growth follows original species curves and setup gate
+ok 24 - growth follows original species curves and setup gate
+  ---
+  duration_ms: 4.5469
+  type: 'test'
+  ...
+# Subtest: heightfield round trip, malformed payload and material bounds
+ok 25 - heightfield round trip, malformed payload and material bounds
+  ---
+  duration_ms: 43.3254
+  type: 'test'
+  ...
+# Subtest: heightfield rejects missing and nonfinite maxima before constructing geometry
+ok 26 - heightfield rejects missing and nonfinite maxima before constructing geometry
+  ---
+  duration_ms: 10.9964
+  type: 'test'
+  ...
+# Subtest: pushing, pulling, settling and smoothing conserve soil and layered material volume
+ok 27 - pushing, pulling, settling and smoothing conserve soil and layered material volume
+  ---
+  duration_ms: 52.3456
+  type: 'test'
+  ...
+# Subtest: changing incoming soil preserves existing layers; dose adds and return removes
+ok 28 - changing incoming soil preserves existing layers; dose adds and return removes
+  ---
+  duration_ms: 27.5899
+  type: 'test'
+  ...
+# Subtest: pruning clips actual triangles, retains attributes, and does not mutate source
+ok 29 - pruning clips actual triangles, retains attributes, and does not mutate source
+  ---
+  duration_ms: 6.2321
+  type: 'test'
+  ...
+1..29
+# tests 29
+# suites 0
+# pass 29
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4423.6805

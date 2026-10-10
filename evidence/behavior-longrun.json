@@ -1,0 +1,64 @@
+{
+  "seconds": 600,
+  "computeMs": 3459.8652999999995,
+  "maxBodyPenetrationMetres": 0.00029488086625023297,
+  "reverseTranslationSteps": 0,
+  "totalTravelMetres": [
+    1.7095130702755146,
+    0.35491352788425945,
+    0.5867965900329869,
+    2.317532064905393,
+    2.668671964682406
+  ],
+  "netTravelMetres": [
+    0.3121457303310958,
+    0.040401766888210566,
+    0.019322676161001494,
+    0.8624966090153289,
+    0.031841683655961156
+  ],
+  "states": [
+    [
+      "Rest",
+      "Walk",
+      "Graze",
+      "Groom"
+    ],
+    [
+      "Rest",
+      "Graze",
+      "Walk",
+      "RoutineSwim",
+      "Groom"
+    ],
+    [
+      "Rest",
+      "Walk",
+      "RoutineSwim",
+      "Graze",
+      "Groom"
+    ],
+    [
+      "Rest",
+      "Graze",
+      "Walk",
+      "RoutineSwim",
+      "Groom"
+    ],
+    [
+      "Rest",
+      "Graze",
+      "Walk",
+      "Groom"
+    ]
+  ],
+  "metrics": {
+    "decisions": 118,
+    "arrivals": 67,
+    "blocked": 157,
+    "peerWaits": 162,
+    "consumed": 5.948229065873895,
+    "backwardCorrections": 987,
+    "routineSwims": 6
+  }
+}

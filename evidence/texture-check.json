@@ -1,0 +1,210 @@
+{
+  "mode": "lossless WebP, identical decoded RGBA pixels, original dimensions",
+  "files": [
+    {
+      "old": "texture-0.png",
+      "new": "texture-0.webp",
+      "before": 5257799,
+      "after": 3671124
+    },
+    {
+      "old": "texture-1.png",
+      "new": "texture-1.webp",
+      "before": 5278197,
+      "after": 3703414
+    },
+    {
+      "old": "texture-10.png",
+      "new": "texture-10.webp",
+      "before": 403207,
+      "after": 71134
+    },
+    {
+      "old": "texture-11.png",
+      "new": "texture-11.webp",
+      "before": 455094,
+      "after": 176930
+    },
+    {
+      "old": "texture-12.png",
+      "new": "texture-12.webp",
+      "before": 4305959,
+      "after": 2741814
+    },
+    {
+      "old": "texture-13.png",
+      "new": "texture-13.webp",
+      "before": 11424836,
+      "after": 7666692
+    },
+    {
+      "old": "texture-14.png",
+      "new": "texture-14.webp",
+      "before": 908523,
+      "after": 508246
+    },
+    {
+      "old": "texture-15.png",
+      "new": "texture-15.webp",
+      "before": 1626306,
+      "after": 1315842
+    },
+    {
+      "old": "texture-17.png",
+      "new": "texture-17.webp",
+      "before": 50141375,
+      "after": 9149534
+    },
+    {
+      "old": "texture-18.png",
+      "new": "texture-18.webp",
+      "before": 43414084,
+      "after": 11335180
+    },
+    {
+      "old": "texture-19.png",
+      "new": "texture-19.webp",
+      "before": 7479875,
+      "after": 4355358
+    },
+    {
+      "old": "texture-2.png",
+      "new": "texture-2.webp",
+      "before": 4971944,
+      "after": 3394294
+    },
+    {
+      "old": "texture-20.png",
+      "new": "texture-20.webp",
+      "before": 8597442,
+      "after": 1758
+    },
+    {
+      "old": "texture-21.png",
+      "new": "texture-21.webp",
+      "before": 78564415,
+      "after": 20342990
+    },
+    {
+      "old": "texture-22.png",
+      "new": "texture-22.webp",
+      "before": 84110677,
+      "after": 32605260
+    },
+    {
+      "old": "texture-23.png",
+      "new": "texture-23.webp",
+      "before": 9916729,
+      "after": 5937556
+    },
+    {
+      "old": "texture-24.png",
+      "new": "texture-24.webp",
+      "before": 14904434,
+      "after": 706
+    },
+    {
+      "old": "texture-25.png",
+      "new": "texture-25.webp",
+      "before": 173049,
+      "after": 86100
+    },
+    {
+      "old": "texture-26.png",
+      "new": "texture-26.webp",
+      "before": 126133,
+      "after": 64338
+    },
+    {
+      "old": "texture-27.png",
+      "new": "texture-27.webp",
+      "before": 59813,
+      "after": 28286
+    },
+    {
+      "old": "texture-28.png",
+      "new": "texture-28.webp",
+      "before": 134087,
+      "after": 53676
+    },
+    {
+      "old": "texture-29.png",
+      "new": "texture-29.webp",
+      "before": 543268,
+      "after": 480324
+    },
+    {
+      "old": "texture-3.png",
+      "new": "texture-3.webp",
+      "before": 5212368,
+      "after": 3568142
+    },
+    {
+      "old": "texture-30.png",
+      "new": "texture-30.webp",
+      "before": 137804,
+      "after": 87334
+    },
+    {
+      "old": "texture-31.png",
+      "new": "texture-31.webp",
+      "before": 129902,
+      "after": 53104
+    },
+    {
+      "old": "texture-32.png",
+      "new": "texture-32.webp",
+      "before": 543596,
+      "after": 481014
+    },
+    {
+      "old": "texture-33.png",
+      "new": "texture-33.webp",
+      "before": 137925,
+      "after": 87568
+    },
+    {
+      "old": "texture-34.png",
+      "new": "texture-34.webp",
+      "before": 22749,
+      "after": 9968
+    },
+    {
+      "old": "texture-4.png",
+      "new": "texture-4.webp",
+      "before": 4797426,
+      "after": 3242250
+    },
+    {
+      "old": "texture-5.png",
+      "new": "texture-5.webp",
+      "before": 44607,
+      "after": 27652
+    },
+    {
+      "old": "texture-6.png",
+      "new": "texture-6.webp",
+      "before": 134116,
+      "after": 48334
+    },
+    {
+      "old": "texture-7.png",
+      "new": "texture-7.webp",
+      "before": 89261,
+      "after": 17244
+    },
+    {
+      "old": "texture-8.png",
+      "new": "texture-8.webp",
+      "before": 37187,
+      "after": 10450
+    },
+    {
+      "old": "texture-9.png",
+      "new": "texture-9.webp",
+      "before": 707354,
+      "after": 297274
+    }
+  ],
+  "savedBytes": 229170651
+}

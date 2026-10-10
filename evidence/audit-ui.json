@@ -1,0 +1,38 @@
+{
+  "checks": [
+    "pointer placement creates one wood record and mesh",
+    "mouse release ends camera drag after placement",
+    "selected wood rotation works",
+    "pointer plants species 0",
+    "pointer plants species 1",
+    "pointer plants species 2",
+    "undo removes last plant",
+    "redo restores last plant",
+    "UI setup reaches filled tank and visible shrimp",
+    "new constructed tank survives reload with its stock",
+    "export remains reachable at 800x600"
+  ],
+  "errors": [],
+  "clicks": [
+    {
+      "x": 859.7599735944895,
+      "y": 402.27268879051826,
+      "target": "CANVAS"
+    },
+    {
+      "x": 381.61801162962814,
+      "y": 689.1560067666359,
+      "target": "CANVAS"
+    },
+    {
+      "x": 716.3236023259257,
+      "y": 689.1560067666359,
+      "target": "CANVAS"
+    },
+    {
+      "x": 1051.0291930222231,
+      "y": 689.1560067666359,
+      "target": "CANVAS"
+    }
+  ]
+}

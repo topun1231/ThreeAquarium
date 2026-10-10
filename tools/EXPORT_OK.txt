@@ -1,0 +1,1 @@
+nodes=635 geometries=53 draws=180 materials=143 textures=35 animals=5 clips=6

@@ -1,0 +1,24 @@
+{
+  "checks": [
+    "catalogue wood seated with visible geometry",
+    "hardscape gate advances to planting",
+    "all three seedling species load approved meshes",
+    "planting fills tank and restores five legal shrimp",
+    "day advance grows all species",
+    "full-state undo restores prior growth",
+    "pruning produces clipped geometry from uncut source",
+    "restored original plants remain visible after repeated commits",
+    "tap creates a local stress stimulus",
+    "no browser or shader errors"
+  ],
+  "errors": [],
+  "wood": {
+    "position": {
+      "x": 0.01213277735451583,
+      "y": -0.03326432813977857,
+      "z": -0.0020427955630716753
+    },
+    "visible": true,
+    "draws": 1
+  }
+}

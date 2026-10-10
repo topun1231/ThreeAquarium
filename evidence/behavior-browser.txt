@@ -1,0 +1,134 @@
+{
+  "date": "2026-10-09T18:09:06.034Z",
+  "checks": [
+    "opens in autonomous mode",
+    "feeding publishes real food",
+    "autonomous movement updates creature roots",
+    "all visible bodies remain within original contact tolerance",
+    "pause freezes needs, food and movement",
+    "reload preserves all identities and personalities",
+    "reload retains needs",
+    "invalid import leaves prior game save intact",
+    "full browser export/import round trip",
+    "manual action inspection suspends locomotion",
+    "manual clip Rest remains valid",
+    "manual clip Walk remains valid",
+    "manual clip Graze remains valid",
+    "manual clip Groom remains valid",
+    "manual clip RoutineSwim remains valid",
+    "manual clip EscapeSwim remains valid",
+    "real shadows remain enabled",
+    "no browser, shader or WebGL errors"
+  ],
+  "errors": [],
+  "behavior": {
+    "elapsed": 1957.5999999987673,
+    "metrics": {
+      "decisions": 1,
+      "arrivals": 0,
+      "blocked": 0,
+      "peerWaits": 0,
+      "consumed": 0,
+      "backwardCorrections": 0
+    },
+    "agents": [
+      {
+        "id": "5e4b3f9e-6351-4487-8b38-710c928474c0",
+        "p": [
+          0.21316521890045162,
+          0.042149369793200504,
+          -0.03943887879992268
+        ],
+        "state": "Walk",
+        "depth": 0,
+        "needs": {
+          "Hunger": 1,
+          "Stress": 0,
+          "Fatigue": 0,
+          "GroomNeed": 0.5361000000000117,
+          "Monotony": 1
+        }
+      },
+      {
+        "id": "ef164791-1d83-4527-95b2-08ab29ad271d",
+        "p": [
+          -0.26425611660915427,
+          0.17671548642317667,
+          -0.018563014881506808
+        ],
+        "state": "Rest",
+        "depth": 0,
+        "needs": {
+          "Hunger": 0.23842282637220671,
+          "Stress": 0,
+          "Fatigue": 0.5844499999999634,
+          "GroomNeed": 1,
+          "Monotony": 0.05105700039267523
+        }
+      },
+      {
+        "id": "a1b37731-e774-4de5-8bf5-04a3ff4ace1c",
+        "p": [
+          -0.31796896929600554,
+          0.21869615847631052,
+          0.2679580169054111
+        ],
+        "state": "Rest",
+        "depth": 0,
+        "needs": {
+          "Hunger": 0.47221950583589883,
+          "Stress": 0,
+          "Fatigue": 0,
+          "GroomNeed": 0.5259000000000128,
+          "Monotony": 1
+        }
+      },
+      {
+        "id": "7ba73d4d-1451-409f-b00b-0602ca5f6b5c",
+        "p": [
+          -0.24748278875610055,
+          0.18758280727795568,
+          0.047531836187453574
+        ],
+        "state": "Rest",
+        "depth": 7.528671643550222e-05,
+        "needs": {
+          "Hunger": 0.26707383679484437,
+          "Stress": 0,
+          "Fatigue": 0,
+          "GroomNeed": 0.35159999999996516,
+          "Monotony": 1
+        }
+      },
+      {
+        "id": "6fdc27be-0d77-4be4-9dfd-9f53d7c0e536",
+        "p": [
+          0.5689999461174011,
+          0.03839977323412895,
+          -0.22800001502037048
+        ],
+        "state": "Rest",
+        "depth": 0,
+        "needs": {
+          "Hunger": 0.18163604538549794,
+          "Stress": 0,
+          "Fatigue": 0.19184999999996236,
+          "GroomNeed": 0.16019999999999854,
+          "Monotony": 0.2291399971246767
+        }
+      }
+    ]
+  },
+  "runtime": {
+    "fps": 59.93638037836933,
+    "p95ms": 16.899999999999636,
+    "shadows": true,
+    "drawCalls": 627,
+    "programs": 19,
+    "viewport": [
+      1600,
+      900
+    ],
+    "animals": 5
+  }
+}

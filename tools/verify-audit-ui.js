@@ -1,0 +1,23 @@
+async page=>{
+ const report={checks:[],errors:[]},check=(v,label)=>{if(!v)throw new Error(label);report.checks.push(label);};page.on('pageerror',e=>report.errors.push(e.message));page.on('console',m=>{if(m.type()==='error')report.errors.push(m.text());});
+ await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:90000});
+ const keys=['aquarium.three.creatures.v1','aquarium.three.previous','aquarium.three.migration.v1'],before=await page.evaluate(keys=>Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)])),keys);
+ async function clickPoint(x,z){await page.waitForTimeout(250);const p=await page.evaluate(([x,z])=>{const a=aquarium,v=a.controls.target.clone().set(x,a.game.runtime.current.soil.sample(x,z),-z).project(a.camera),px=(v.x+1)*innerWidth/2,py=(1-v.y)*innerHeight/2;return {x:px,y:py,target:document.elementFromPoint(px,py)?.tagName};},[x,z]);report.clicks??=[];report.clicks.push(p);await page.mouse.click(p.x,p.y);await page.waitForFunction(()=>!aquarium.game.busy);}
+ try{
+  await page.locator('#tank-menu').click();await page.evaluate(()=>window.confirm=()=>true);await page.locator('#tank-empty').click();await page.waitForFunction(()=>!aquarium.game.busy);
+  // Use the original soil as a placement fixture; real pointer soil strokes are covered separately.
+  await page.evaluate(async()=>{const g=aquarium.game,n=structuredClone(g.data);n.Tank.Substrate=structuredClone(g.runtime.source.Tank.Substrate);await g.transact(n);});
+  await page.locator('#setup-next').click();await page.waitForFunction(()=>!aquarium.game.busy);await page.locator('#setup-tool').selectOption('stone');await page.locator('#stone-kind').selectOption('branch_driftwood__small__original');await page.locator('#top-view').click();await page.waitForTimeout(300);await clickPoint(.05,.04);
+  check(await page.evaluate(()=>aquarium.game.data.Tank.Hardscape.length===1),'pointer placement creates one wood record and mesh');
+  const camera=await page.evaluate(()=>aquarium.camera.position.toArray());await page.mouse.move(700,450);await page.waitForTimeout(250);check(await page.evaluate(p=>aquarium.camera.position.distanceTo(aquarium.controls.target.clone().fromArray(p))<1e-6,camera),'mouse release ends camera drag after placement');
+  await page.locator('#object-right').click();await page.waitForFunction(()=>!aquarium.game.busy);check(await page.evaluate(()=>aquarium.game.data.Tank.Hardscape[0].Rotation.y!==0),'selected wood rotation works');
+  await page.locator('#setup-next').click();await page.waitForFunction(()=>!aquarium.game.busy);await page.locator('#setup-tool').selectOption('plant');
+  for(let i=0;i<3;i++){await page.locator('#plant-kind').selectOption(String(i));await clickPoint(-.35+i*.28,-.2);check(await page.evaluate(n=>aquarium.game.data.Tank.Plants.length===n,i+1),'pointer plants species '+i);}
+  await page.locator('#setup-undo').click();await page.waitForFunction(()=>!aquarium.game.busy);check(await page.evaluate(()=>aquarium.game.data.Tank.Plants.length===2),'undo removes last plant');await page.locator('#setup-redo').click();await page.waitForFunction(()=>!aquarium.game.busy);check(await page.evaluate(()=>aquarium.game.data.Tank.Plants.length===3),'redo restores last plant');
+  await page.locator('#setup-next').click();await page.waitForFunction(()=>!aquarium.game.busy);check(await page.evaluate(()=>aquarium.game.data.Tank.Setup.Filled&&aquarium.aq.animals.every(a=>a.rig.visible)),'UI setup reaches filled tank and visible shrimp');
+  const ids=await page.evaluate(()=>aquarium.world.agents.map(a=>a.data.CreatureId));await page.locator('#save').click();await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:90000});check(await page.evaluate(ids=>JSON.stringify(ids)===JSON.stringify(aquarium.world.agents.map(a=>a.data.CreatureId))&&aquarium.game.data.Tank.Plants.length===3,ids),'new constructed tank survives reload with its stock');
+  await page.setViewportSize({width:800,height:600});await page.waitForTimeout(300);await page.locator('#export').scrollIntoViewIfNeeded();check(await page.locator('#export').isVisible(),'export remains reachable at 800x600');report.errors.length===0||check(false,'browser errors');
+ }catch(e){report.failure=e.message;report.message=await page.locator('#message').textContent();}
+ finally{await page.setViewportSize({width:1600,height:900});await page.evaluate(before=>{aquarium.renderer.setAnimationLoop(null);for(const [key,value]of Object.entries(before)){if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}Storage.prototype.setItem=function(){};},before);await page.reload();}
+ return report;
+}

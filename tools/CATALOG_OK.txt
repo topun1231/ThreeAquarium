@@ -1,0 +1,1 @@
+entries=68 geometry=63 textures=28
