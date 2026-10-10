@@ -88,7 +88,7 @@ test('flora grows through advanceEcology and survives a session round trip', () 
 });
 
 test('catalog covers every species and variant, with ground and host placement rules', () => {
-  assert.equal(FLORA_CATALOG.length, 20);
+  assert.equal(FLORA_CATALOG.length, 16);
   assert.deepEqual(parsePlantKind('1'), {unity:1});
   assert.deepEqual(parsePlantKind('flora:rotala:2'), {species:'rotala', variant:2});
   assert.throws(() => parsePlantKind('flora:kelp:0'));

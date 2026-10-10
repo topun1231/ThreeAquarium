@@ -1,5 +1,6 @@
 import {stableSeed} from './state.js';
 import {realSpanLabel} from './ecology.js';
+import {floraCatalogLabel, unityPlantName} from './plant-names.js';
 
 const STATE = {Rest:'休息', Walk:'行走', Climb:'攀爬', Graze:'摄食', Groom:'清洁', Hide:'躲藏', RoutineSwim:'短游', EscapeSwim:'弹尾'};
 const DAY = 86400;
@@ -13,7 +14,6 @@ export const CROWD_LIMIT = 36;
 export const POP_CAP = 50;
 export const NAME_LIMIT = 16;
 export const TREAT_BONUS = 0.12;
-const PLANT_NAMES = ['后景茎草', '中景阔叶草', '前景细叶草'];
 
 export function isFemale(id) { return stableSeed(String(id)) % 2 === 0; }
 
@@ -140,17 +140,22 @@ function dayLabel(seconds) {
   return days < 1 ? '不到 1 天' : `${Math.floor(days)} 天`;
 }
 
-export function plantLine(plants, definitions) {
-  if (!plants?.length) return '缸里还没有水草。';
-  let youngest = plants[0];
-  for (const plant of plants) if (plant.EcologicalAgeSeconds < youngest.EcologicalAgeSeconds) youngest = plant;
+export function plantLine(plants, definitions, flora = []) {
+  const unity = plants || [], extra = flora || [], total = unity.length + extra.length;
+  if (!total) return '缸里还没有水草。';
+  if (extra.length && !unity.length) {
+    const names = [...new Set(extra.map(r => floraCatalogLabel(r.Species, r.Variant)))];
+    return extra.length === 1 ? names[0] : `水草 ${extra.length} 株 · ${names.slice(0, 3).join('、')}`;
+  }
+  let youngest = unity[0];
+  for (const plant of unity) if (plant.EcologicalAgeSeconds < youngest.EcologicalAgeSeconds) youngest = plant;
   const index = definitions.findIndex(item => item.TypeId === youngest.TypeId);
   const definition = definitions[index];
   const peak = definition?.PeakGrowth > 0 ? definition.PeakGrowth : 1;
   const pct = Math.round(Math.min(100, youngest.Growth / peak * 100));
-  const name = PLANT_NAMES[index] || '水草';
+  const name = unityPlantName(youngest.TypeId, definitions);
   const age = `${name}种下 ${dayLabel(youngest.EcologicalAgeSeconds)}，长到峰值的 ${pct}%`;
-  return plants.length === 1 ? age : `水草 ${plants.length} 株 · 最年轻的${age}`;
+  return total === 1 ? age : `水草 ${total} 株 · 最年轻的${age}`;
 }
 
 export function shrimpDetail(agent, record, simSeconds) {
@@ -163,7 +168,7 @@ export function shrimpDetail(agent, record, simSeconds) {
   return `${record.favorite ? '★ ' : ''}${record.name} · ${sex} · ${stage}${berry}\n饥饿 ${Math.round(needs.Hunger * 100)}% · 压力 ${Math.round(needs.Stress * 100)}% · 疲劳 ${Math.round(needs.Fatigue * 100)}%`;
 }
 
-export function careSummary(agents, colony, {simSeconds = 0, plants = [], definitions = [], richness = 0} = {}) {
+export function careSummary(agents, colony, {simSeconds = 0, plants = [], definitions = [], richness = 0, flora = []} = {}) {
   if (!agents.length) return '缸里还没有虾。注水之后，成熟的母虾会在条件合适时抱卵。';
   const book = colony?.shrimp || {};
   const grazing = agents.filter(agent => agent.data.ExecutionState === 'Graze').length;
@@ -180,7 +185,7 @@ export function careSummary(agents, colony, {simSeconds = 0, plants = [], defini
   else if (!berried.length && richness >= 0.45) headline += ' · 成熟母虾会慢慢抱卵';
   const favorites = agents.map((agent, index) => ({agent, index, record:book[agent.data.CreatureId]})).filter(item => item.record?.favorite);
   favorites.sort((a, b) => a.index - b.index);
-  const lines = [headline, `生态第 ${Math.floor(simSeconds / DAY) + 1} 天 · ${plantLine(plants, definitions)}`];
+  const lines = [headline, `生态第 ${Math.floor(simSeconds / DAY) + 1} 天 · ${plantLine(plants, definitions, flora)}`];
   if (favorites.length) lines.push('收藏：' + favorites.map(item => `★${item.record.name}`).join('、'));
   const notes = (colony?.journal || []).slice(-3).map(item => `第 ${item.day} 天 · ${item.text}`);
   return [...lines, ...notes].join('\n');

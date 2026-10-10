@@ -60,9 +60,11 @@ test('cached dense-leaf contact flow matches the rendered flow across stems and 
 });
 
 test('real Anubias replace the retired catalog and migrate old plants without losing attachment',()=>{
-  assert.equal(FLORA_CATALOG.filter(r=>r.species==='pala').length,4);
-  assert.equal(FLORA_CATALOG.filter(r=>r.species==='nullified').length,4);
-  assert.ok(!FLORA_CATALOG.some(r=>r.species==='anubias'||r.label.includes('小榕')));
+  assert.equal(FLORA_CATALOG.filter(r=>r.species==='pala').length,3);
+  assert.equal(FLORA_CATALOG.filter(r=>r.species==='nullified').length,1);
+  assert.ok(!FLORA_CATALOG.some(r=>r.species==='anubias'||/Pala|Nullified/i.test(r.label)));
+  assert.ok(FLORA_CATALOG.some(r=>r.label==='纳纳小榕 · 大叶'));
+  assert.ok(FLORA_CATALOG.some(r=>r.label==='巴氏榕'));
   assert.ok(!floraUnitMetrics().anubiasLeaf);
   const old=record('anubias','old-plant'),a=sanitizeFlora([old])[0];
   assert.ok(['pala','nullified'].includes(a.Species));
