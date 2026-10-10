@@ -11,6 +11,7 @@ import {fullGameplay} from './gameplay.js';
 import {resizePopulation} from './population.js';
 import {FootContacts} from './foot-contacts.js';
 import {AquariumWater} from './water.js';
+import {installTankLook,shapeTankLights} from './tank-look.js';
 import {PlantContacts} from './plant-contacts.js';
 import {createSelectionGlow} from './selection-glow.js';
 
@@ -23,7 +24,7 @@ const scene=new THREE.Scene();scene.background=new THREE.Color('#202629');
 const camera=new THREE.PerspectiveCamera(32,innerWidth/innerHeight,.002,30);
 const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.minDistance=.045;controls.maxDistance=4;controls.maxPolarAngle=Math.PI*.98;controls.panSpeed=.5;
 const keys=new Set();let paused=false,time=0,previous=0,selected=null,aq=null,world=null,seed=null,habitat=null,accumulator=0,lastSave=0,saveBlocked=false,layout=[],layoutModel=null,editor=null,editing=false,busy=false;
-let full=null,waterRenderer=null;const feet=new FootContacts(),plantContacts=new PlantContacts();
+let full=null,waterRenderer=null,tankLook=null;const feet=new FootContacts(),plantContacts=new PlantContacts();
 const mirror=a=>new THREE.Vector3(a[0],a[1],-a[2]);
 const message=text=>{const node=$('message');node.textContent=text||'';node.classList.remove('show');if(!text)return;void node.offsetWidth;node.classList.add('show');};
 const WELCOME_KEY='aquarium.three.welcome.v1';
@@ -90,7 +91,7 @@ function frame(now){const raw=previous?(now-previous)/1000:0,dt=Math.min(.05,raw
   if(!busy&&world.elapsed-lastSave>=15){saveGame();lastSave=world.elapsed;}
 
   if(keys.size){const v=new THREE.Vector3((keys.has('ArrowRight')?1:0)-(keys.has('ArrowLeft')?1:0),(keys.has('ArrowUp')?1:0)-(keys.has('ArrowDown')?1:0),0);v.normalize().applyQuaternion(camera.quaternion).multiplyScalar(dt*.18*Math.min(1,camera.position.distanceTo(controls.target)));camera.position.add(v);controls.target.add(v);}
-  controls.update();if(waterRenderer)waterRenderer.render(time,full?.data.Tank.Setup.Filled??true);else renderer.render(scene,camera);frames++;
+  controls.update();const wall=now/1000;tankLook?.update(wall);if(waterRenderer)waterRenderer.render(wall,full?.data.Tank.Setup.Filled??true);else renderer.render(scene,camera);frames++;
   if(!fpsStart)fpsStart=now;else if(now-fpsStart>=1000){$('stats').textContent=`${Math.round(frames*1000/(now-fpsStart))} FPS · 阴影开启`;fpsStart=now;frames=0;}
 }
 const pellet=new THREE.Mesh(new THREE.SphereGeometry(.0025,12,8),new THREE.MeshStandardMaterial({color:'#7f5427',roughness:.95}));pellet.castShadow=true;pellet.visible=false;
@@ -114,15 +115,16 @@ try{
     light.position.copy(mirror(l.position));if(light.target){light.target.position.copy(light.position).add(mirror(l.forward));scene.add(light.target);}light.castShadow=l.shadows;
     if(light.shadow){light.shadow.mapSize.set(2048,2048);light.shadow.bias=-.00002;light.shadow.normalBias=.001;if(l.type==='Directional')Object.assign(light.shadow.camera,{left:-1,right:1,top:1,bottom:-1,near:.01,far:10});light.shadow.camera.updateProjectionMatrix();}scene.add(light);
   }
+  shapeTankLights(scene);
   let stored;try{stored=localStorage.getItem(SAVE_KEY);if(stored)apply(JSON.parse(stored));}catch(e){message('旧浏览器进度未载入：'+e.message);}
   setAction('Auto');$('action').value='Auto';
   status();
   editor=plantEditor({aq,model:layoutModel,camera,canvas:renderer.domElement,getLayout:()=>layout,commit:commitLayout,mode:value=>{editing=value;accumulator=0;$('feed').disabled=value;$('action').disabled=value;},message});
   full=await fullGameplay({aq,camera,controls,canvas:renderer.domElement,scene,message,reset,world:()=>world,seed:()=>seed,selected:()=>selected,records:()=>layoutModel.records(layout),snapshot:()=>({...world.snapshot(),layout:structuredClone(layout)}),saveBlocked:()=>saveBlocked,blockSave:()=>{saveBlocked=true;},unblockSave:()=>{saveBlocked=false;},freeze:value=>{editing=value;accumulator=0;},releaseAction:()=>{setAction('Auto');$('action').value='Auto';},focusShrimp(id){const animal=aq.animals.find(a=>a.id===id);if(!animal)return false;frameShrimp(animal);return true;},status:text=>$('status').textContent=text,invalidateReflection:()=>{if(waterRenderer)waterRenderer.reflectionDirty=true;},waterLevel:level=>{if(waterRenderer&&Number.isFinite(level))waterRenderer.level.value=level;},preparePopulation:w=>aq.animals.length!==w.agents.length?resizePopulation(aq,w,w.agents.length):null,replace:(w,s,h)=>{world=w;seed=s;habitat=h;aq.animals.forEach((a,i)=>{a.id=w.agents[i].data.CreatureId;a.rig.traverse(o=>{if(o.isMesh)o.userData.creatureId=a.id;});});layout=[];accumulator=0;lastSave=world.elapsed;if(selected&&!aq.animals.includes(selected))reset();setAction($('action').value);},population:async count=>{const p=resizePopulation(aq,world,count);try{localStorage.setItem(GAME_SAVE_KEY,JSON.stringify({...full.snapshot(),...p.world.snapshot()}));}catch(e){p.dispose();throw e;}p.commit();world=p.world;seed=p.seed;if(selected&&!aq.animals.includes(selected))reset();setAction($('action').value);}});
-  waterRenderer=new AquariumWater(renderer,scene,camera,aq);
+  waterRenderer=new AquariumWater(renderer,scene,camera,aq);tankLook=installTankLook({scene,aq,water:waterRenderer});
   $('loading').remove();
   const supported=new Set(p.clips.map(c=>c.name));for(const option of $('action').options)option.disabled=option.value!=='Auto'&&!supported.has(option.value);
-  window.aquarium={ready:true,renderer,scene,camera,controls,aq,progress,reset,get game(){return full;},get world(){return world;},get habitat(){return habitat;},get layout(){return structuredClone(layout);},get editor(){return editor;},get paused(){return paused;},get selected(){return selected?.id;},feet,waterRenderer,get time(){return time;},glow};
+  window.aquarium={ready:true,renderer,scene,camera,controls,aq,progress,reset,get game(){return full;},get world(){return world;},get habitat(){return habitat;},get layout(){return structuredClone(layout);},get editor(){return editor;},get paused(){return paused;},get selected(){return selected?.id;},feet,waterRenderer,get look(){return tankLook;},get time(){return time;},glow};
   renderer.setAnimationLoop(frame);
 }catch(error){console.error(error);$('progress').textContent='加载失败：'+error.message;$('status').textContent='迁移资产尚未就绪';window.aquarium={ready:false,error:error.message};}
 
