@@ -122,22 +122,22 @@ const UNITS = {
   },
   moss(v, rand) {
     const parts = [];
-    for (let i = 0, n = 26 + v * 4; i < n; i++) {
-      const len = 0.0022 + rand() * 0.0028, width = 0.001 + rand() * 0.0009;
-      parts.push(placed(blade({length:len, width, round:1.55, cup:0.1, curl:-0.16, droop:0.4 + rand() * 0.35, rows:3, cols:1, midrib:0}), {
-        x:(rand() - 0.5) * 0.015, y:rand() * 0.0014, z:(rand() - 0.5) * 0.015,
-        yaw:rand() * 6.28, pitch:0.35 + rand() * 1.05, roll:(rand() - 0.5) * 0.5,
+    for (let i = 0, n = 42 + v * 6; i < n; i++) {
+      const len = 0.0011 + rand() * 0.0014, width = 0.00038 + rand() * 0.00032;
+      parts.push(placed(blade({length:len, width, round:1.7, cup:0.08, curl:-0.12, droop:0.35 + rand() * 0.3, rows:3, cols:1, midrib:0}), {
+        x:(rand() - 0.5) * 0.012, y:rand() * 0.001, z:(rand() - 0.5) * 0.012,
+        yaw:rand() * 6.28, pitch:0.08 + rand() * 0.5, roll:(rand() - 0.5) * 0.7,
       }));
     }
-    for (let i = 0, stems = 10 + v * 2; i < stems; i++) {
-      const yaw = rand() * 6.28, pitch = 0.25 + rand() * 1.05, len = 0.007 + rand() * 0.008, width = 0.00055 + rand() * 0.0004;
-      const ox = (rand() - 0.5) * 0.011, oz = (rand() - 0.5) * 0.011;
-      parts.push(placed(blade({length:len, width, round:1.5, cup:0, curl:-0.24, droop:0.7 + rand() * 0.28, rows:5, cols:1, midrib:0}), {x:ox, y:rand() * 0.001, z:oz, yaw, pitch}));
-      for (let k = 0, n = 6 + Math.floor(rand() * 4); k < n; k++) {
-        const t = 0.14 + k * 0.11 + rand() * 0.04, ll = 0.002 + rand() * 0.0026;
-        parts.push(placed(blade({length:ll, width:ll * 0.48, round:1.35, cup:0.04, curl:-0.14, droop:0.3, rows:3, cols:1, midrib:0}), {
-          x:ox + Math.cos(yaw) * len * t * Math.cos(pitch), y:Math.sin(pitch) * len * t * 0.42, z:oz - Math.sin(yaw) * len * t * Math.cos(pitch),
-          yaw:yaw + (k % 2 ? 1.15 : -1.15) + (rand() - 0.5) * 1.05, pitch:pitch * 0.18 + (rand() - 0.5) * 1.15,
+    for (let i = 0, stems = 12 + v * 2; i < stems; i++) {
+      const yaw = rand() * 6.28, pitch = 0.2 + rand() * 0.95, len = 0.0045 + rand() * 0.0055, width = 0.00028 + rand() * 0.0002;
+      const ox = (rand() - 0.5) * 0.01, oz = (rand() - 0.5) * 0.01;
+      parts.push(placed(blade({length:len, width, round:1.6, cup:0, curl:-0.2, droop:0.72 + rand() * 0.22, rows:4, cols:1, midrib:0}), {x:ox, y:rand() * 0.0008, z:oz, yaw, pitch:pitch * 0.55}));
+      for (let k = 0, n = 8 + Math.floor(rand() * 5); k < n; k++) {
+        const t = 0.12 + k * 0.09 + rand() * 0.03, ll = 0.0011 + rand() * 0.0014;
+        parts.push(placed(blade({length:ll, width:ll * 0.4, round:1.5, cup:0.03, curl:-0.1, droop:0.28, rows:3, cols:1, midrib:0}), {
+          x:ox + Math.cos(yaw) * len * t * Math.cos(pitch), y:Math.sin(pitch) * len * t * 0.4, z:oz - Math.sin(yaw) * len * t * Math.cos(pitch),
+          yaw:yaw + (k % 2 ? 1.2 : -1.2) + (rand() - 0.5) * 1.1, pitch:pitch * 0.15 + (rand() - 0.5) * 1.2,
         }));
       }
     }
@@ -417,16 +417,16 @@ export class FloraView {
         const tangent = new T.Vector3().crossVectors(normal, Math.abs(normal.y) > 0.9 ? new T.Vector3(1, 0, 0) : UP).normalize();
         const bitangent = new T.Vector3().crossVectors(normal, tangent);
         if (spec.kind === 'moss') {
-        const count = Math.max(n, 28);
+        const count = Math.max(n, 36);
         for (let i = 0; i < count; i++) {
             if (random(stableSeed(record.UniqueId + i))() > this.density) continue;
-            const angle = i * 2.39996 + record.Yaw, radius = 0.015 * Math.sqrt(i + 0.15) * record.Scale;
-            const hang = Math.max(0, 0.62 - normal.y) * (0.01 + rand() * 0.016);
+            const angle = i * 2.39996 + record.Yaw, radius = 0.012 * Math.sqrt(i + 0.12) * record.Scale;
+            const hang = Math.max(0, 0.62 - normal.y) * (0.008 + rand() * 0.014);
             const guess = anchor.clone().addScaledVector(tangent, Math.cos(angle) * radius).addScaledVector(bitangent, Math.sin(angle) * radius * (0.65 + rand() * 0.55)).addScaledVector(UP, -hang);
             const at = snap(guess).addScaledVector(normal, -0.0005);
             const drape = Math.max(0, 0.82 - normal.y);
             tmp.q.setFromUnitVectors(UP, normal.clone().lerp(new T.Vector3(0, -0.85, 0), 0.45 + drape * 0.7).normalize()).multiply(tmp.q2.setFromAxisAngle(UP, rand() * 6.28));
-            const size = (2.05 + rand() * 1.05) * record.Scale;
+            const size = (1.35 + rand() * 0.55) * record.Scale;
             const color = COLORS.moss.clone().lerp(COLORS.mossTip, rand() * 0.75).offsetHSL(hueShift + (rand() - 0.5) * 0.035, (rand() - 0.35) * 0.12, (rand() - 0.4) * 0.1);
             add('moss', (record.Variant + i) % FLORA_VARIANTS, new T.Matrix4().compose(at, tmp.q.clone(), new T.Vector3(size, size * (0.65 + rand() * 0.6), size)), color, [at.x, at.y, at.z, phase + i], {id:record.UniqueId, node:i});
           }

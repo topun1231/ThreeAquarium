@@ -1,0 +1,93 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Flora close-ups</title>
+<style>
+  html,body{margin:0;background:#101416;color:#d7e0dc;font:14px sans-serif}
+  #grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px}
+  canvas{width:100%;height:360px;background:#1a2220;border-radius:8px}
+  h2{margin:8px 12px 0;font-size:16px}
+</style>
+<h2>程序水草近景（HIGH）</h2>
+<div id="grid">
+  <div><canvas id="moss"></canvas><p>莫丝</p></div>
+  <div><canvas id="rotala"></canvas><p>红宫廷</p></div>
+  <div><canvas id="carpet"></canvas><p>矮珍珠</p></div>
+  <div><canvas id="anubias"></canvas><p>纳纳小榕 / 巴氏榕</p></div>
+</div>
+<script type="module">
+import * as T from 'three';
+import {FloraView} from '/src/flora-view.js';
+import {anubiasGeometry} from '/src/anubias.js';
+
+function frame(canvas, build, cameraPos, look) {
+  const renderer = new T.WebGLRenderer({canvas, antialias:true, alpha:false});
+  renderer.setPixelRatio(1);
+  renderer.setSize(canvas.clientWidth, 360, false);
+  renderer.outputColorSpace = T.SRGBColorSpace;
+  renderer.toneMapping = T.ACESFilmicToneMapping;
+  const scene = new T.Scene();
+  scene.background = new T.Color('#1c2622');
+  const camera = new T.PerspectiveCamera(32, canvas.clientWidth/360, 0.002, 4);
+  camera.position.set(...cameraPos);
+  camera.lookAt(...look);
+  scene.add(new T.HemisphereLight('#c8ddd4', '#2a2018', 0.85));
+  const key = new T.DirectionalLight('#fff4e0', 1.8);
+  key.position.set(0.2, 0.4, 0.3);
+  scene.add(key);
+  const aq = {root:new T.Group(), materials:[]};
+  scene.add(aq.root);
+  const flora = new FloraView(aq, () => null);
+  build(flora);
+  renderer.render(scene, camera);
+}
+
+const host = new T.Mesh(new T.BoxGeometry(0.08, 0.03, 0.05), new T.MeshStandardMaterial({color:'#5a4634'}));
+host.name = 'W0 wood';
+host.position.set(0, 0.03, 0);
+host.updateMatrixWorld(true);
+
+frame(document.getElementById('moss'), flora => {
+  flora.root.add(host.clone());
+  const h = host.clone(); h.updateMatrixWorld(true);
+  flora.build([{UniqueId:'m', Species:'moss', Variant:2, Yaw:0.2, Scale:1.1, Hue:0, Nodes:28, Host:'wood', Local:[0, 0.016, 0], Normal:[0, 1, 0]}], {
+    soil:{sample:() => 0.02}, habitat:{surfaces:[]}, entities:new Map([['wood', h]]),
+  });
+}, [0.07, 0.055, 0.09], [0, 0.03, 0]);
+
+frame(document.getElementById('rotala'), flora => {
+  flora.build([
+    {UniqueId:'r1', Species:'rotala', Variant:1, Yaw:0.4, Scale:1.05, Hue:0.04, Nodes:22, X:0, Z:0},
+    {UniqueId:'r2', Species:'rotala', Variant:2, Yaw:1.2, Scale:0.92, Hue:-0.02, Nodes:16, X:0.012, Z:0.008},
+    {UniqueId:'r3', Species:'rotala', Variant:0, Yaw:2.4, Scale:0.85, Hue:0.08, Nodes:14, X:-0.01, Z:-0.006},
+  ], {
+    soil:{sample:() => 0.02}, habitat:{surfaces:[]}, entities:new Map(),
+  });
+}, [0.08, 0.11, 0.16], [0, 0.07, 0]);
+
+frame(document.getElementById('carpet'), flora => {
+  flora.build([{UniqueId:'c', Species:'carpet', Variant:2, Yaw:0.1, Scale:1, Hue:0, Nodes:110, X:0, Z:0}], {
+    soil:{sample:() => 0.02}, habitat:{surfaces:[]}, entities:new Map(),
+  });
+}, [0.05, 0.045, 0.06], [0, 0.022, 0]);
+
+const pack = await (await fetch('/assets/anubias/models.json')).json();
+const bytes = await (await fetch('/assets/anubias/geometry.bin')).arrayBuffer();
+const maps = new Map();
+const loader = new T.TextureLoader();
+for (const m of pack.materials) if (m.map && !maps.has(m.map)) {
+  const t = await loader.loadAsync('/assets/anubias/' + m.map);
+  t.flipY = m.flipY ?? true;
+  t.colorSpace = T.SRGBColorSpace;
+  maps.set(m.map, t);
+}
+frame(document.getElementById('anubias'), flora => {
+  flora.installAnubias({models:anubiasGeometry(pack, bytes), materials:pack.materials, maps});
+  const h = host.clone(); h.updateMatrixWorld(true);
+  flora.build([
+    {UniqueId:'p', Species:'pala', Variant:0, Yaw:0.2, Scale:1, Hue:0, Nodes:8, Host:'wood', Local:[-0.018, 0.016, 0], Normal:[0,1,0]},
+    {UniqueId:'n', Species:'nullified', Variant:0, Yaw:0.5, Scale:1, Hue:0, Nodes:8, Host:'wood', Local:[0.02, 0.016, 0.01], Normal:[0,1,0]},
+  ], {soil:{sample:() => 0.02}, habitat:{surfaces:[]}, entities:new Map([['wood', h]])});
+}, [0.08, 0.09, 0.12], [0, 0.04, 0]);
+
+window.floraShotsReady = true;
+</script>

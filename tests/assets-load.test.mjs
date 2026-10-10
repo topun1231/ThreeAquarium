@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import * as T from 'three';
 import {TankRuntime, needsCatalogMeshes} from '../src/tank-runtime.js';
@@ -52,4 +53,24 @@ test('scene and catalog texture files exist and catalog-only maps are listed', (
   assert.ok(catalogOnly.some(f => f.startsWith('catalog-texture-')), catalogOnly.join(','));
   assert.ok(fs.existsSync(path.join(assets, 'catalog-geometry.bin')));
   assert.ok(fs.existsSync(path.join(assets, 'anubias/models.json')));
+  assert.ok(!fs.existsSync(path.join(assets, 'texture-16.jpg')));
+  assert.ok(scene.materials.some(m => m.map === 'texture-16.webp'));
+});
+
+test('runtime color and normal maps stay at or below 2048', () => {
+  const overs = execFileSync('python3', ['-c', `
+import json, os
+from PIL import Image
+root = ${JSON.stringify(assets)}
+scene = json.load(open(os.path.join(root, 'scene.json')))
+bad = []
+for m in scene['materials']:
+    for k in ('map', 'normal'):
+        f = m.get(k)
+        if not f: continue
+        im = Image.open(os.path.join(root, f))
+        if max(im.size) > 2048: bad.append(f'{f} {im.size}')
+print('\\n'.join(bad))
+`], {encoding: 'utf8'}).trim();
+  assert.equal(overs, '');
 });
