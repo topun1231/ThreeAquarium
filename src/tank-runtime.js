@@ -7,8 +7,10 @@ import {plantHeight} from './ecology.js';
 import {pruneGeometry} from './pruning.js';
 import {createHabitat,reconnectGraph,vec,nearest} from './habitat.js';
 import {CreatureWorld} from './creatures.js';
+import {floraCollisionItems} from './flora-view.js';
 import {populationRecords} from './population.js';
 const identity=new T.Matrix4(),mirror=new T.Matrix4().makeScale(1,1,-1);
+const disposeSurface=s=>{s.geo.dispose();if(s.ownedSource)s.source.dispose();};
 export const rotation=r=>new T.Quaternion().setFromEuler(new T.Euler(...['x','y','z'].map(k=>T.MathUtils.degToRad(r[k])),'YXZ'));
 const copyTransform=(o,r)=>{o.position.copy(vec(r.Position));o.quaternion.copy(rotation(r.Rotation));o.scale.copy(vec(r.Scale));};
 export class TankRuntime {
@@ -41,21 +43,27 @@ export class TankRuntime {
   if(!node){node=this.catalog.nodes[entry.root].clone(true);copyTransform(node,record);if(entry.baseKey){const content=new T.Group();for(const child of [...node.children])content.add(child);content.scale.setScalar(entry.fixedScale);node.add(content);}}
   node.name=(entry.wood?'W0 ':'R0 ')+record.UniqueId;node.userData={entity:record.UniqueId,kind:entry.wood?2:1};node.traverse(o=>{if(o.isMesh)o.userData={...o.userData,entity:record.UniqueId,kind:entry.wood?2:1};});return node;
  }
+ validateFloraHosts(tank){const hosts=new Map();for(const r of tank.Flora||[]){if(!r.Host)continue;if(!hosts.has(r.Host)){const host=this.hardscape(tank.Hardscape.find(h=>h.UniqueId===r.Host));host.updateMatrixWorld(true);hosts.set(r.Host,{matrix:host.matrixWorld,box:new T.Box3().setFromObject(host)});}const {matrix,box}=hosts.get(r.Host),p=new T.Vector3(...r.Local).applyMatrix4(matrix);if(Math.abs(p.x)>.65||Math.abs(p.z)>.35||p.y<-.1||p.y>.65||box.distanceToPoint(p)>.03)throw new Error('附生水草的附着位置超出木石');}}
  async prepare(save,reuse=null,{navigation=true,mutableSolids=false}={}){const soil=new Substrate(this.settings,save.Tank.Substrate),group=new T.Group(),entities=new Map(),sameSoil=reuse&&JSON.stringify(save.Tank.Substrate)===JSON.stringify(reuse.save.Tank.Substrate),soilView=new SoilView(this.aq,soil,sameSoil?reuse.soilView:null,this.sourceSoil);group.add(soilView.root);
+  let habitat,floraItems=[];
   try{for(const record of save.Tank.Hardscape){if(this.entries.get(record.TypeId)?.legacy&&!this.originals.has(record.UniqueId)&&['R04','R06'].includes(record.TypeId))continue;const node=this.hardscape(record);entities.set(record.UniqueId,node);group.add(node);}
    for(const record of save.Tank.Plants){const node=this.plant(record,soil);entities.set(record.UniqueId,node);group.add(node);}group.updateMatrixWorld(true);
    const surfaces=[{node:'ground',owner:'Aquarium living substrate',kind:0,solid:false,geometry:soilView.ground.geometry,transform:identity.clone()}];
    for(const [id,node]of entities)node.traverse(o=>{if(o.isMesh&&o.geometry.index?.count)surfaces.push({node:id+'/'+o.name+'/'+surfaces.filter(s=>s.owner===node.name).length,owner:node.name,kind:node.userData.kind,solid:node.userData.kind!==3,rebuild:mutableSolids&&node.userData.kind!==3,geometry:o.geometry,material:o.material[0].userData.source,transform:o.matrixWorld.clone()});});
-   const habitat=await createHabitat(null,null,()=>{},reuse?.habitat,surfaces);let anchors=[];
-   if(navigation){const prior=reuse?.anchors||[],push=h=>{if(!h||h.normal.y<-.25||Math.abs(h.point.x)>.575||Math.abs(h.point.z)>.277||h.point.y>.56)return;const key=[h.point.x,h.point.y,h.point.z].map(v=>Math.round(v/.012)).join(':');if(occupied.has(key))return;occupied.add(key);const old=prior.find(a=>a.owner===h.surface.owner&&vec(a.position).distanceTo(h.point)<.012);anchors.push({position:h.point.clone(),normal:h.normal.clone(),kind:h.surface.kind,owner:h.surface.owner,food:old?.food??(h.surface.kind===3?.60:.4),edges:[]});},occupied=new Set();
+   habitat=await createHabitat(null,null,()=>{},reuse?.habitat,surfaces);
+   const baseHabitat=habitat;
+   if(save.Tank.Flora?.length){floraItems=this.flora?this.flora.collisionItems(save.Tank.Flora,{soil,entities,habitat,unity:true}):floraCollisionItems(save.Tank.Flora,{soil,habitat,hostMatrix:id=>entities.get(id)?.matrixWorld});surfaces.push(...floraItems);habitat=await createHabitat(null,null,()=>{},habitat,surfaces);}let anchors=[];
+   if(navigation){const prior=reuse?.anchors||[],push=h=>{if(h?.surface.flora&&h.normal.y<0)h.normal.negate();if(!h||h.normal.y<-.25||Math.abs(h.point.x)>.575||Math.abs(h.point.z)>.277||h.point.y>.56)return;const key=h.surface.owner+':'+[h.point.x,h.point.y,h.point.z].map(v=>Math.round(v/.012)).join(':');if(occupied.has(key))return;occupied.add(key);const old=prior.find(a=>a.owner===h.surface.owner&&vec(a.position).distanceTo(h.point)<.012);anchors.push({position:h.point.clone(),normal:h.normal.clone(),kind:h.surface.kind,owner:h.surface.owner,flora:!!h.surface.flora,food:old?.food??(h.surface.kind===3?.60:.4),edges:[]});},occupied=new Set();
     for(let x=-.565;x<=.566;x+=.032)for(let z=-.266;z<=.267;z+=.032)push(habitat.cast(new T.Vector3(x,.59,z),new T.Vector3(0,-1,0),.6));
-    for(const surface of habitat.surfaces){if(surface.kind===0)continue;const p=surface.geo.attributes.position,stride=Math.max(1,Math.floor(p.count/(surface.kind===3?24:220)));for(let i=0;i<p.count;i+=stride){const point=new T.Vector3().fromBufferAttribute(p,i),h=habitat.closest(point,.001);push(h);}}
+    // Leaves can hide the floor/host from the coarse top grid; retain an entry point at each root.
+    for(const r of save.Tank.Flora||[]){if(r.Host){const node=entities.get(r.Host);if(node){const point=new T.Vector3(...r.Local).applyMatrix4(node.matrixWorld),hit=baseHabitat.closest(point,.015);if(hit?.surface.owner===node.name)push(hit);}}else {const hit=baseHabitat.cast(new T.Vector3(r.X,soil.sample(r.X,r.Z)+.012,r.Z),new T.Vector3(0,-1,0),.025);if(hit?.surface.kind===0)push(hit);}}
+    for(const surface of habitat.surfaces){if(surface.kind===0)continue;if(surface.samples){for(const point of surface.samples)push(habitat.closest(point,.001));continue;}const p=surface.geo.attributes.position,stride=Math.max(1,Math.floor(p.count/(surface.kind===3?24:220)));for(let i=0;i<p.count;i+=stride){const point=new T.Vector3().fromBufferAttribute(p,i),h=habitat.closest(point,.001);push(h);}}
     reconnectGraph(habitat,anchors);
    }
-   return {save,soil,group,entities,soilView,habitat,anchors,dispose(){soilView.dispose(reuse?.soilView);group.traverse(o=>{if(o.userData.ownedGeometry)o.geometry.dispose();});for(const s of habitat.surfaces)if(!reuse?.habitat.surfaces.includes(s))s.geo.dispose();}};
-  }catch(e){soilView.dispose(reuse?.soilView);group.traverse(o=>{if(o.userData.ownedGeometry)o.geometry.dispose();});throw e;}
+   return {save,soil,group,entities,soilView,habitat,anchors,dispose(){soilView.dispose(reuse?.soilView);group.traverse(o=>{if(o.userData.ownedGeometry)o.geometry.dispose();});for(const s of habitat.surfaces)if(!reuse?.habitat.surfaces.includes(s))disposeSurface(s);}};
+  }catch(e){soilView.dispose(reuse?.soilView);group.traverse(o=>{if(o.userData.ownedGeometry)o.geometry.dispose();});if(habitat)for(const s of habitat.surfaces)if(!reuse?.habitat.surfaces.includes(s))disposeSurface(s);for(const item of floraItems)if(!habitat?.surfaces.some(s=>s.source===item.geometry))item.geometry.dispose();throw e;}
  }
- commit(candidate){this.originalHidden.forEach(n=>n.visible=false);if(this.current){this.aq.root.remove(this.current.group);this.current.soilView.dispose(candidate.soilView);this.current.group.traverse(o=>{if(o.userData.ownedGeometry)o.geometry.dispose();});for(const s of this.current.habitat.surfaces)if(!candidate.habitat.surfaces.includes(s))s.geo.dispose();}this.current=candidate;this.aq.root.add(candidate.group);this.aq.root.updateMatrixWorld(true);}
+ commit(candidate){this.originalHidden.forEach(n=>n.visible=false);if(this.current){this.aq.root.remove(this.current.group);this.current.soilView.dispose(candidate.soilView);this.current.group.traverse(o=>{if(o.userData.ownedGeometry)o.geometry.dispose();});for(const s of this.current.habitat.surfaces)if(!candidate.habitat.surfaces.includes(s))disposeSurface(s);}this.current=candidate;this.aq.root.add(candidate.group);this.aq.root.updateMatrixWorld(true);}
  remapWorld(candidate,seed,game,stock=this.aq.populationBase||seed){const nextSeed={...seed,creatures:populationRecords(stock,game.creatures.length),tankId:candidate.save.Tank.UniqueId,anchors:candidate.anchors.map(a=>({...a,position:a.position.toArray(),normal:a.normal.toArray()}))};
   const saved=structuredClone(game);saved.tankId=nextSeed.tankId;saved.anchors=saved.creatures.map(c=>nearest(candidate.anchors,vec(c.Position)));saved.food=candidate.anchors.map(a=>a.food);saved.pellet=null;
   if(!Array.isArray(game.food)||game.food.length>12000||game.food.some(n=>!Number.isFinite(n)||n<0||n>1))throw new Error('食物记录无效');
@@ -64,6 +72,6 @@ export class TankRuntime {
    const cells=new Map();previous.forEach((a,i)=>{const key=a.owner+':'+a.position.map(n=>Math.round(n/.012)).join(':');cells.set(key,game.food[i]);});candidate.anchors.forEach((a,i)=>{const cell=a.position.toArray().map(n=>Math.round(n/.012)).join(':');saved.food[i]=cells.get(a.owner+':'+cell)??cells.get(':'+cell)??a.food;});
    if(game.pellet){if(!previous[game.pellet.anchor]||!Number.isFinite(game.pellet.age)||game.pellet.age<0||game.pellet.age>240)throw new Error('饲料记录无效');const at=nearest(candidate.anchors,vec(previous[game.pellet.anchor].position));if(at>=0)saved.pellet={anchor:at,age:game.pellet.age};}
   }
-  return {seed:nextSeed,world:new CreatureWorld(nextSeed,candidate.habitat,saved)};
+  return {seed:nextSeed,world:new CreatureWorld(nextSeed,candidate.habitat,saved,candidate.save.Colony)};
  }
 }

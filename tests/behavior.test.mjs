@@ -49,7 +49,7 @@ test('ten-minute real-scene run retains safe surfaces, independent behavior and 
   for(const [j,a] of w.agents.entries()){
    const delta=a.position.clone().sub(old[j].p);travel[j]+=delta.length();states[j].add(a.data.ExecutionState);assert.ok(a.position.toArray().every(Number.isFinite));
    if(a.speed>0&&!a.swim){const normal=up.clone().applyQuaternion(old[j].q).add(up.clone().applyQuaternion(a.rotation)).normalize(),heading=head(old[j].q).add(head(a.rotation)).projectOnPlane(normal).normalize();if(delta.projectOnPlane(normal).dot(heading)<-1e-6)reverse++;}
-   if(i%10===0)maxDepth=Math.max(maxDepth,habitat.depth(a.position,a.rotation));
+   if(i%10===0)maxDepth=Math.max(maxDepth,habitat.depth(a.position,a.rotation,a.scale));
   }
  }
  const result={seconds:600,computeMs:performance.now()-begin,maxBodyPenetrationMetres:maxDepth,reverseTranslationSteps:reverse,totalTravelMetres:travel,netTravelMetres:w.agents.map((a,i)=>a.position.distanceTo(start[i])),states:states.map(s=>[...s]),metrics:w.metrics};

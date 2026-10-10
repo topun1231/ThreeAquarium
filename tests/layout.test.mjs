@@ -31,7 +31,7 @@ test('plant edit moves contact anchors, reuses untouched BVHs, preserves food/id
  assert.ok(indices.length>0);for(const {a,i} of indices){const b=candidate.seed.anchors[i];assert.ok(vec(b.position).distanceTo(vec(a.position))>.1);assert.ok(candidate.habitat.closest(vec(b.position),.0001));}
  const records=model.records(layout),record=records.find(p=>p.UniqueId===id);assert.equal(record.Growth,plant.record.Growth);assert.deepEqual(record.Scale,plant.record.Scale);assert.deepEqual(record.Cuts,plant.record.Cuts);
  const reloaded=await model.prepare(layout);assert.deepEqual(reloaded.seed.anchors,candidate.seed.anchors);assert.doesNotThrow(()=>new CreatureWorld(reloaded.seed,reloaded.habitat,next.snapshot()));
- for(let i=0;i<1200;i++)next.step(.05);assert.doesNotThrow(()=>validateGame(next.snapshot(),candidate.seed));assert.ok(next.agents.every(a=>candidate.habitat.depth(a.position,a.rotation)<=.000301));
+ for(let i=0;i<1200;i++)next.step(.05);assert.doesNotThrow(()=>validateGame(next.snapshot(),candidate.seed));assert.ok(next.agents.every(a=>candidate.habitat.depth(a.position,a.rotation,a.scale)<=.000301));
  const restored=await model.prepare([]);assert.equal(restored.habitat,habitat);assert.equal(restored.seed,seed);
  fs.writeFileSync(new URL('../evidence/layout-core.json',import.meta.url),JSON.stringify({plants:89,changedSurfaces:changed.length,reusedSurfaces:candidate.habitat.surfaces.length-changed.length,anchors:candidate.seed.anchors.length,checks:'records, validation, support, graph, immutable source, roundtrip, 60s simulation',milliseconds:performance.now()-start},null,2));
 });
