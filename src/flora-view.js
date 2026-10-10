@@ -186,6 +186,18 @@ function swayMaterial(name, {color = '#ffffff', roughness = 0.62, amplitude, hei
       #define RE_Direct AQFloraDirect`);
   };
   material.customProgramCacheKey = () => `flora-sway-v3-${clearcoat > 0 ? 'coat' : 'std'}${clipNodes ? '-clip' : ''}`;
+  if (clipNodes) {
+    const depth = new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking});
+    depth.onBeforeCompile = shader => {
+      shader.vertexShader = 'attribute float aqNode;\nattribute float aqLeaves;\n' + shader.vertexShader.replace('#include <project_vertex>', `
+        #ifdef USE_INSTANCING
+        if (aqNode >= 0.0 && aqNode >= aqLeaves) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+        #endif
+        #include <project_vertex>`);
+    };
+    depth.customProgramCacheKey = () => 'flora-depth-clip-v1';
+    material.customDepthMaterial = depth;
+  }
   return material;
 }
 
@@ -203,6 +215,42 @@ export function swayFloraPoint(point, stem, {amplitude, height}, time) {
   point.x += (Math.sin(time * .62 + stem[0] * 9 + phase) + .45 * Math.sin(time * 1.37 + stem[2] * 13 + phase * 1.7)) * gain;
   point.z += (.6 * Math.sin(time * .47 + stem[2] * 7 + phase * .6) + .3 * Math.sin(time * 1.11 + stem[0] * 5)) * gain;
   return point;
+}
+
+/** Drop triangles whose authored node is at or past the visible leaf count. */
+export function keepVisibleLeaves(unit, leaves) {
+  const nodes = unit.attributes.aqNode;
+  if (!nodes || !(leaves < 90)) return unit.clone();
+  const keep = [];
+  const src = unit.index;
+  if (src) {
+    for (let i = 0; i < src.count; i += 3) {
+      const a = src.getX(i);
+      if (nodes.getX(a) >= 0 && nodes.getX(a) >= leaves) continue;
+      keep.push(a, src.getX(i + 1), src.getX(i + 2));
+    }
+  } else {
+    for (let i = 0; i < nodes.count; i += 3) {
+      if (nodes.getX(i) >= 0 && nodes.getX(i) >= leaves) continue;
+      keep.push(i, i + 1, i + 2);
+    }
+  }
+  const geo = unit.clone();
+  geo.setIndex(keep);
+  return geo;
+}
+
+function floraLeafRaycast(raycaster, intersects) {
+  const nodeAttr = this.geometry.attributes.aqNode, leafAttr = this.geometry.attributes.aqLeaves;
+  const before = intersects.length;
+  T.InstancedMesh.prototype.raycast.call(this, raycaster, intersects);
+  if (!nodeAttr || !leafAttr) return;
+  for (let i = intersects.length - 1; i >= before; i--) {
+    const hit = intersects[i];
+    if (hit.object !== this || !hit.face || hit.instanceId == null) continue;
+    const node = nodeAttr.getX(hit.face.a), leaves = leafAttr.getX(hit.instanceId);
+    if (node >= 0 && node >= leaves) intersects.splice(i, 1);
+  }
 }
 
 export function floraUnitMetrics() {
@@ -476,6 +524,8 @@ export class FloraView {
         mesh.receiveShadow = true;
         mesh.frustumCulled = false;
         mesh.userData.flora = true;
+        if (leafAttr) mesh.raycast = floraLeafRaycast;
+        if (mesh.material.customDepthMaterial) mesh.customDepthMaterial = mesh.material.customDepthMaterial;
         this.root.add(mesh);
         entry = {mesh, capacity, stems, leafAttr};
         this.meshes.set(name, entry);
@@ -499,8 +549,15 @@ export class FloraView {
     for (const [name, entry] of this.meshes) if (!used.has(name)) { entry.mesh.count = 0; entry.mesh.visible = false; entry.mesh.userData.owners = []; }
   }
 
+  hiddenFloraFace(hit) {
+    const nodeAttr = hit?.object?.geometry?.attributes?.aqNode, leafAttr = hit?.object?.geometry?.attributes?.aqLeaves;
+    if (!nodeAttr || !leafAttr || !hit.face || hit.instanceId == null) return false;
+    const node = nodeAttr.getX(hit.face.a), leaves = leafAttr.getX(hit.instanceId);
+    return node >= 0 && node >= leaves;
+  }
+
   owner(hit) {
-    if (!hit?.object?.userData.flora || hit.instanceId == null) return null;
+    if (!hit?.object?.userData.flora || hit.instanceId == null || this.hiddenFloraFace(hit)) return null;
     return hit.object.userData.owners?.[hit.instanceId] || null;
   }
 
@@ -517,7 +574,9 @@ export class FloraView {
       for (let i = 0; i < b.matrices.length; i++) {
         const id = b.owners[i].id;
         if (!plants.has(id)) plants.set(id, {parts:[], samples:[]});
-        const plant = plants.get(id), geo = base.clone().applyMatrix4(b.matrices[i]);
+        const plant = plants.get(id), leaves = b.leaves[i];
+        const geo = (tiny ? base.clone() : keepVisibleLeaves(unit, leaves)).applyMatrix4(b.matrices[i]);
+        if (!tiny && geo.index && geo.index.count === 0) { geo.dispose(); continue; }
         for (const attr of Object.keys(geo.attributes)) if (attr !== 'position') geo.deleteAttribute(attr);
         const p = geo.attributes.position, stems = new Float32Array(p.count * 4), sways = new Float32Array(p.count * 2), sway = this.materials[b.key].userData.sway;
         for (let j = 0; j < p.count; j++) { stems.set(b.stems[i], j*4); sways.set([sway.amplitude, sway.height], j*2); }
@@ -528,14 +587,23 @@ export class FloraView {
           const tip = this.tips[b.key][b.variant];
           for (const y of [.1,.5,1]) plant.samples.push(new T.Vector3(tip[0],y,tip[2]).applyMatrix4(b.matrices[i]));
         } else {
-          plant.samples.push(new T.Vector3(...this.tips[b.key][b.variant]).applyMatrix4(b.matrices[i]));
-          for (const j of [0, Math.floor(p.count*.25), Math.floor(p.count*.5)]) plant.samples.push(new T.Vector3().fromBufferAttribute(p,j));
+          const tipNodes = this.tipNodes?.[b.key] || [];
+          const tips = this.tips[b.key] || [];
+          if (tipNodes.length) {
+            for (let t = 0; t < tips.length; t++) {
+              if ((tipNodes[t] ?? 0) >= leaves) continue;
+              plant.samples.push(new T.Vector3(...tips[t]).applyMatrix4(b.matrices[i]));
+            }
+          } else if (tips[b.variant]) {
+            plant.samples.push(new T.Vector3(...tips[b.variant]).applyMatrix4(b.matrices[i]));
+          }
+          for (const j of [0, Math.floor(p.count*.25), Math.floor(p.count*.5)]) if (j < p.count) plant.samples.push(new T.Vector3().fromBufferAttribute(p,j));
         }
         plant.parts.push(geo);
       }
       if (tiny) base.dispose();
     }
-    return [...plants].map(([id, plant]) => {
+    return [...plants].filter(([, plant]) => plant.parts.length).map(([id, plant]) => {
       const geometry = mergeGeometries(plant.parts, false); plant.parts.forEach(g => g.dispose());
       return {node:'flora/'+id, owner:'Plant '+id, kind:3, solid:false, flora:true, ownedSource:true, material:{motion:1, leaf:1}, geometry, transform:new T.Matrix4(), samples:plant.samples};
     });
