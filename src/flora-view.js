@@ -216,7 +216,7 @@ export class FloraView {
     const kind = runtime.current ? 'runtime' : 'source';
     if (this.last?.kind !== kind) force = true;
     this.last = {save, runtime, kind};
-    if (save.Tank.Flora == null) { save.Tank.Flora = this.plan(save, scene); force = true; }
+    if (save.Tank.Flora == null) { save.Tank.Flora = []; force = true; }
     const signature = floraSignature(save.Tank.Flora);
     if (!force && signature === this.signature) return;
     this.signature = signature;
@@ -359,4 +359,39 @@ export class FloraView {
     for (const {mesh} of this.meshes.values()) if (mesh.visible && mesh.count) { instances += mesh.count; draws++; }
     return {instances, draws};
   }
+}
+
+/** Kind-3 walkable hulls in Unity space so shrimp can graze the new plants. */
+export function floraCollisionItems(list, {soil, hostMatrix}) {
+  const items = [];
+  if (!list?.length) return items;
+  for (const record of list) {
+    const spec = SPECIES[record.Species];
+    if (!spec) continue;
+    let transform, geo;
+    if (spec.host) {
+      const host = hostMatrix?.(record.Host);
+      if (!host) continue;
+      const local = new T.Vector3(...record.Local);
+      const normal = new T.Vector3(...record.Normal).normalize();
+      transform = host.clone().multiply(new T.Matrix4().compose(local, new T.Quaternion().setFromUnitVectors(UP, normal), new T.Vector3(1, 1, 1)));
+      const radius = (spec.kind === 'moss' ? 0.012 : 0.018) * record.Scale;
+      geo = new T.CircleGeometry(radius, 8);
+      geo.rotateX(-Math.PI / 2);
+    } else {
+      const y = soil.sample(record.X, record.Z);
+      const n = visibleNodes(record);
+      transform = new T.Matrix4().compose(new T.Vector3(record.X, y, record.Z), new T.Quaternion(), new T.Vector3(1, 1, 1));
+      if (spec.kind === 'stem') {
+        const height = Math.max(0.04, n * 0.011 * record.Scale);
+        geo = new T.CylinderGeometry(0.0035, 0.0035, height, 5, 1, true);
+        geo.translate(0, height / 2, 0);
+      } else {
+        geo = new T.CircleGeometry(0.0043 * Math.sqrt(n) * record.Scale, 8);
+        geo.rotateX(-Math.PI / 2);
+      }
+    }
+    items.push({node:'flora/' + record.UniqueId, owner:'Plant ' + record.UniqueId, kind:3, solid:false, rebuild:false, geometry:geo, transform});
+  }
+  return items;
 }

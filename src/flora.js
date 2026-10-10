@@ -9,6 +9,12 @@ export const SPECIES = {
 };
 export const FLORA_VARIANTS = 4;
 export const FLORA_LIMIT = 200;
+const VARIANT_MARK = ['甲', '乙', '丙', '丁'];
+export const FLORA_CATALOG = Object.entries(SPECIES).flatMap(([id, spec]) =>
+  Array.from({length:FLORA_VARIANTS}, (_, variant) => ({
+    id:`flora:${id}:${variant}`, species:id, variant, label:`${spec.label} · ${VARIANT_MARK[variant]}`, host:!!spec.host,
+  }))
+);
 const DAY = 86400;
 const finite = (v, a, b) => Number.isFinite(v) && v >= a && v <= b;
 const triple = (v, limit) => Array.isArray(v) && v.length === 3 && v.every(n => finite(n, -limit, limit));
@@ -64,6 +70,49 @@ export function sanitizeFlora(list) {
 
 export function floraSignature(list) {
   return (list || []).map(r => `${r.UniqueId}:${visibleNodes(r)}:${r.X ?? r.Host}:${r.Z ?? ''}`).join('|');
+}
+
+export function parsePlantKind(value) {
+  if (value == null || value === '') throw new Error('未知水草品种');
+  if (/^\d+$/.test(String(value))) return {unity:Number(value)};
+  const match = /^flora:([a-z]+):(\d+)$/.exec(String(value));
+  if (!match || !SPECIES[match[1]] || Number(match[2]) >= FLORA_VARIANTS) throw new Error('未知水草品种');
+  return {species:match[1], variant:Number(match[2])};
+}
+
+export function floraGap(species) {
+  const spec = SPECIES[species];
+  if (!spec) return 0.02;
+  return spec.kind === 'carpet' ? 0.038 : spec.kind === 'moss' ? 0.028 : spec.kind === 'rosette' ? 0.055 : 0.014;
+}
+
+export function checkFloraGround(list, {x, z, species, ignore, plants = []}) {
+  const spec = SPECIES[species];
+  if (!spec || spec.host) throw new Error('这种水草要附在木石上');
+  if (!finite(x, -0.56, 0.56) || !finite(z, -0.26, 0.26)) throw new Error('请在有底床的缸内区域种植');
+  const gap = floraGap(species);
+  if ((list || []).some(r => r.UniqueId !== ignore && !SPECIES[r.Species]?.host && Math.hypot(r.X - x, r.Z - z) < gap)) throw new Error('离其他水草太近');
+  if (plants.some(p => p.id !== ignore && Math.hypot(p.x - x, p.z - z) < Math.max(0.016, gap * 0.7))) throw new Error('离其他水草太近');
+  return true;
+}
+
+export function checkFloraHost(list, {host, local, species, ignore}) {
+  const spec = SPECIES[species];
+  if (!spec?.host) throw new Error('这种水草种在底床上');
+  if (typeof host !== 'string' || !host) throw new Error('请先选中木石，再点它的表面附着');
+  if (!triple(local, 2)) throw new Error('附着位置无效');
+  const gap = floraGap(species);
+  if ((list || []).some(r => r.UniqueId !== ignore && r.Host === host && SPECIES[r.Species]?.host && Math.hypot(r.Local[0] - local[0], r.Local[1] - local[1], r.Local[2] - local[2]) < gap)) throw new Error('离其他水草太近');
+  return true;
+}
+
+export function makeFloraRecord({id, species, variant, x, z, host, local, normal, yaw = 0}) {
+  const spec = SPECIES[species];
+  if (!spec) throw new Error('未知水草品种');
+  const record = {UniqueId:id, Species:species, Variant:variant, Yaw:yaw, Scale:1, Hue:0, Nodes:spec.start};
+  if (spec.host) Object.assign(record, {Host:host, Local:local, Normal:normal});
+  else Object.assign(record, {X:x, Z:z});
+  return sanitizeFlora([record])[0];
 }
 
 function random(seed) {

@@ -7,6 +7,7 @@ import {plantHeight} from './ecology.js';
 import {pruneGeometry} from './pruning.js';
 import {createHabitat,reconnectGraph,vec,nearest} from './habitat.js';
 import {CreatureWorld} from './creatures.js';
+import {floraCollisionItems} from './flora-view.js';
 import {populationRecords} from './population.js';
 const identity=new T.Matrix4(),mirror=new T.Matrix4().makeScale(1,1,-1);
 export const rotation=r=>new T.Quaternion().setFromEuler(new T.Euler(...['x','y','z'].map(k=>T.MathUtils.degToRad(r[k])),'YXZ'));
@@ -46,6 +47,7 @@ export class TankRuntime {
    for(const record of save.Tank.Plants){const node=this.plant(record,soil);entities.set(record.UniqueId,node);group.add(node);}group.updateMatrixWorld(true);
    const surfaces=[{node:'ground',owner:'Aquarium living substrate',kind:0,solid:false,geometry:soilView.ground.geometry,transform:identity.clone()}];
    for(const [id,node]of entities)node.traverse(o=>{if(o.isMesh&&o.geometry.index?.count)surfaces.push({node:id+'/'+o.name+'/'+surfaces.filter(s=>s.owner===node.name).length,owner:node.name,kind:node.userData.kind,solid:node.userData.kind!==3,rebuild:mutableSolids&&node.userData.kind!==3,geometry:o.geometry,material:o.material[0].userData.source,transform:o.matrixWorld.clone()});});
+   for(const item of floraCollisionItems(save.Tank.Flora||[],{soil,hostMatrix:id=>{const node=entities.get(id);if(!node)return null;node.updateMatrixWorld(true);return node.matrixWorld.clone();}}))surfaces.push(item);
    const habitat=await createHabitat(null,null,()=>{},reuse?.habitat,surfaces);let anchors=[];
    if(navigation){const prior=reuse?.anchors||[],push=h=>{if(!h||h.normal.y<-.25||Math.abs(h.point.x)>.575||Math.abs(h.point.z)>.277||h.point.y>.56)return;const key=[h.point.x,h.point.y,h.point.z].map(v=>Math.round(v/.012)).join(':');if(occupied.has(key))return;occupied.add(key);const old=prior.find(a=>a.owner===h.surface.owner&&vec(a.position).distanceTo(h.point)<.012);anchors.push({position:h.point.clone(),normal:h.normal.clone(),kind:h.surface.kind,owner:h.surface.owner,food:old?.food??(h.surface.kind===3?.60:.4),edges:[]});},occupied=new Set();
     for(let x=-.565;x<=.566;x+=.032)for(let z=-.266;z<=.267;z+=.032)push(habitat.cast(new T.Vector3(x,.59,z),new T.Vector3(0,-1,0),.6));

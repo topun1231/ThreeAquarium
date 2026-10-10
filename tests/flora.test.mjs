@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {SPECIES, growFlora, pruneFlora, sanitizeFlora, planFlora, visibleNodes, floraSignature} from '../src/flora.js';
+import {SPECIES, growFlora, pruneFlora, sanitizeFlora, planFlora, visibleNodes, floraSignature, parsePlantKind, checkFloraGround, checkFloraHost, makeFloraRecord, FLORA_CATALOG} from '../src/flora.js';
+import * as T from 'three';
+import {floraCollisionItems} from '../src/flora-view.js';
 import {advanceEcology} from '../src/ecology.js';
 import {validateSession} from '../src/session.js';
 
@@ -80,7 +82,33 @@ test('flora grows through advanceEcology and survives a session round trip', () 
   assert.ok(Math.abs(save.Tank.Flora[0].Nodes - (9 + 3 * 0.8)) < 1e-9);
   const loaded = validateSession(JSON.parse(JSON.stringify(save)), runtime);
   assert.deepEqual(loaded.Tank.Flora, save.Tank.Flora);
-  assert.equal(validateSession(structuredClone(source), runtime).Tank.Flora, undefined, 'older saves plan their own default flora');
+  assert.equal(validateSession(structuredClone(source), runtime).Tank.Flora, undefined, 'older saves do not grow a default layout');
   assert.throws(() => validateSession({...structuredClone(save), Tank:{...save.Tank, Flora:[stem({Nodes:-1})]}}, runtime));
   assert.notEqual(floraSignature(save.Tank.Flora), floraSignature([stem({Nodes:20}), moss()]));
+});
+
+test('catalog covers every species and variant, with ground and host placement rules', () => {
+  assert.equal(FLORA_CATALOG.length, 16);
+  assert.deepEqual(parsePlantKind('1'), {unity:1});
+  assert.deepEqual(parsePlantKind('flora:rotala:2'), {species:'rotala', variant:2});
+  assert.throws(() => parsePlantKind('flora:kelp:0'));
+  checkFloraGround([], {x:0.1, z:-0.15, species:'rotala'});
+  assert.throws(() => checkFloraGround([], {x:0.1, z:-0.15, species:'moss'}), /木石/);
+  assert.throws(() => checkFloraGround([stem({X:0.1, Z:-0.15})], {x:0.105, z:-0.15, species:'rotala'}), /太近/);
+  assert.throws(() => checkFloraGround([], {x:0.8, z:0, species:'carpet'}), /缸内/);
+  checkFloraHost([], {host:'W1', local:[0, 0.01, 0], species:'anubias'});
+  assert.throws(() => checkFloraHost([], {host:'', local:[0, 0, 0], species:'anubias'}));
+  const planted = makeFloraRecord({id:'n1', species:'carpet', variant:1, x:0.2, z:-0.2});
+  assert.equal(planted.Nodes, SPECIES.carpet.start);
+  assert.equal(planted.Variant, 1);
+});
+
+test('procedural plants export walkable hulls for shrimp', () => {
+  const soil = {sample:() => 0.04};
+  const items = floraCollisionItems([
+    stem({X:0.2, Z:0.1, Nodes:16}),
+    moss({Host:'wood', Local:[0.01, 0.02, 0], Normal:[0, 1, 0]}),
+  ], {soil, hostMatrix:id => id === 'wood' ? new T.Matrix4() : null});
+  assert.equal(items.length, 2);
+  assert.ok(items.every(item => item.kind === 3 && item.owner.startsWith('Plant ') && !item.solid));
 });
