@@ -23,7 +23,7 @@ export class Substrate {
  kind(i){const layers=this.layers[i];return layers.findLast(l=>l.Volume/this.area[i]>.000025)?.Kind??layers.at(-1)?.Kind??-1;}
  crest(x,z){const k=this.kind(this.cell(x,z));return .0021*(k===2||k===3?.25:1)*clamp((this.sample(x,z)-this.MinHeight)/.0015,0,1);}
  volume(){return this.h.reduce((v,h,i)=>v+(h-this.MinHeight)*this.area[i],0);}
- put(i,kind,v){if(v<=0)return;const a=this.layers[i],last=a.at(-1);if(last?.Kind===kind)last.Volume+=v;else a.push({Kind:kind,Volume:v});}
+ put(i,kind,v){if(v<=0)return;if(!Number.isInteger(kind)||kind<0||kind>4)throw new Error('土壤类型无效');const a=this.layers[i],last=a.at(-1);if(last?.Kind===kind)last.Volume+=v;else a.push({Kind:kind,Volume:v});}
  take(i,v){const mix=new Float64Array(5),a=this.layers[i];while(v>1e-14&&a.length){const l=a.at(-1),amount=Math.min(v,l.Volume);mix[l.Kind]+=amount;l.Volume-=amount;v-=amount;if(l.Volume<1e-14)a.pop();}return mix;}
  transfer(remove,add){const nr=remove.reduce((s,p)=>s+p[1],0),na=add.reduce((s,p)=>s+p[1],0),v=Math.min(nr,na);if(v<1e-14)return;const mix=new Float64Array(5);
   for(const [i,capacity]of remove){const amount=v*capacity/nr;this.h[i]-=amount/this.area[i];this.take(i,amount).forEach((x,k)=>mix[k]+=x);}
@@ -49,4 +49,16 @@ export class Substrate {
   }}
  }
  snapshot(){let bytes='';for(const h of this.h){const n=Math.round(clamp((h-this.MinHeight)/(this.MaxHeight-this.MinHeight),0,1)*65535);bytes+=String.fromCharCode(n&255,n>>8);}return {IncomingKind:this.incoming,HasHeightfield:true,Heightfield:{Version:1,Columns:this.Columns,Rows:this.Rows,MinHeight:this.MinHeight,MaxHeight:this.MaxHeight,QuantizedHeights:btoa(bytes)},MaterialLayers:JSON.stringify({Cells:this.layers.map(Layers=>({Layers}))})};}
+}
+export function parseSoilKind(value){
+ if(typeof value==='string'&&value.trim()==='')throw new Error('土壤类型无效');
+ const kind=typeof value==='number'?value:Number(value);
+ if(!Number.isInteger(kind)||kind<0||kind>4)throw new Error('土壤类型无效');
+ return kind;
+}
+export function sanitizeSubstrateKind(substrate){
+ if(!substrate||typeof substrate!=='object')return false;
+ const ok=Number.isInteger(substrate.IncomingKind)&&substrate.IncomingKind>=0&&substrate.IncomingKind<=4;
+ if(!ok)substrate.IncomingKind=0;
+ return ok;
 }

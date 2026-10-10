@@ -1,4 +1,6 @@
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+// One real minute is about one ecological day, so new plants change while you watch.
+export const LIVE_GROWTH_SCALE=1440;
 export function curve(keys,t){
  if(!keys?.length)throw new Error('植物生长曲线缺失');
  if(t<=keys[0].time)return keys[0].value;
@@ -21,6 +23,14 @@ export function advanceEcology(save,definitions,seconds){
   p.Stage=p.Growth<.25?0:p.Growth<.75?1:p.Growth<1.2?2:3;p.LastUpdatedSimulationSeconds=save.SimulationSeconds;
   p.Cuts=p.Cuts.filter(c=>(p.EcologicalAgeSeconds-c.EcologicalAgeAtCut)/86400<d.TrimRecoveryDays);
  }
+ settleContinuousGrowth(save.Tank.Plants,definitions);
+}
+export function plantStructureChanged(before,after){
+ if(!before||!after||before.length!==after.length)return true;
+ return after.some((plant,index)=>plant.Stage!==before[index].Stage||plant.Cuts.length!==before[index].Cuts.length);
+}
+export function settleContinuousGrowth(plants,definitions){
+ for(const plant of plants){if(!plant.UseContinuousVisualGrowth)continue;const definition=definitions.find(item=>item.TypeId===plant.TypeId);if(definition&&plant.Stage===3&&plant.Growth>=definition.PeakGrowth-1e-3)plant.UseContinuousVisualGrowth=false;}
 }
 export function plantHeight(record,heights,definition,species){
  const h=[heights[0]*(species===2?2.8125:1),heights[1]*(species===2?1.2:1),heights[2],heights[3]*(species===0?1.04:1)],g=record.Growth,lerp=(a,b,t)=>a+(b-a)*clamp(t);

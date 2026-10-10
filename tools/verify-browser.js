@@ -6,7 +6,7 @@ async page => {
  const preserved=await page.evaluate(()=>[localStorage.getItem('aquarium.three.creatures.v1'),localStorage.getItem('aquarium.three.migration.v1')]);
  try{
  check(await page.locator('#action').inputValue()==='Auto','opens in autonomous mode');
- await page.locator('#feed').click();check(await page.evaluate(()=>!!aquarium.world.pellet),'feeding publishes real food');
+ check(await page.evaluate(()=>aquarium.game.feedAt({x:.09,y:.035,z:-.2})&&!!aquarium.world.pellet),'feeding publishes real food');
  const before=await page.evaluate(()=>aquarium.world.agents.map(a=>({id:a.data.CreatureId,p:a.position.toArray(),needs:{...a.data.Needs}})));
  await page.waitForFunction(before=>aquarium.world.agents.some((a,i)=>a.position.toArray().some((v,j)=>Math.abs(v-before[i].p[j])>.001)),before,{timeout:60000});
  await page.waitForTimeout(1000);

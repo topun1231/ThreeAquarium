@@ -2,8 +2,8 @@ async page=>{
  const report={errors:[],samples:[]};page.on('pageerror',e=>report.errors.push(e.message));page.on('console',m=>{if(m.type()==='error')report.errors.push(m.text());});
  await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:90000});const before=await page.evaluate(()=>localStorage.getItem('aquarium.three.creatures.v1'));
  try{
-  await page.locator('#shrimp-count').fill('50');const begin=Date.now();await page.locator('#shrimp-apply').click();await page.waitForFunction(()=>aquarium.world.agents.length===50,null,{timeout:30000});report.add50ms=Date.now()-begin;
-  if(!await page.evaluate(()=>aquarium.game.data.Tank.Environment.LightOn))await page.locator('#tank-light').click();await page.locator('#reset').click();await page.locator('#feed').click();
+  await page.locator('#population-tools').evaluate(el=>{el.open=true;});await page.locator('#shrimp-count').fill('50');const begin=Date.now();await page.locator('#shrimp-apply').click();await page.waitForFunction(()=>aquarium.world.agents.length===50,null,{timeout:30000});report.add50ms=Date.now()-begin;
+  if(!await page.evaluate(()=>aquarium.game.data.Tank.Environment.LightOn))await page.locator('#tank-light').click();await page.locator('#reset').click();await page.evaluate(()=>aquarium.game.feedAt({x:.09,y:.035,z:-.2}));
   await page.evaluate(()=>{window.auditFrames=[];window.auditLast=performance.now();window.auditOn=true;function sample(t){if(!window.auditOn)return;window.auditFrames.push(t-window.auditLast);window.auditLast=t;requestAnimationFrame(sample);}requestAnimationFrame(sample);});
   for(let i=0;i<9;i++){
    if(i===4)await page.evaluate(()=>{const p=aquarium.aq.animals[0].rig.getWorldPosition(aquarium.controls.target.clone());aquarium.controls.target.copy(p);aquarium.camera.position.copy(p).add({x:.12,y:.04,z:.1});aquarium.controls.update();});
