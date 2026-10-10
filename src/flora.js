@@ -1,19 +1,19 @@
 import {stableSeed} from './state.js';
+import {FLORA_TRADE, floraCatalogLabel, catalogVariantCount} from './plant-names.js';
 
 // Additional plants share the editing/save flow. Float Nodes retains slow growth between ecology days.
 export const SPECIES = {
-  rotala: {label:'红宫廷', kind:'stem', start:12, max:30, perDay:0.8, host:false},
-  carpet: {label:'矮珍珠', kind:'carpet', start:60, max:150, perDay:3, host:false},
-  moss: {label:'莫丝', kind:'moss', start:12, max:40, perDay:0.7, host:true},
-  pala: {label:'水榕（Pala）', kind:'rosette', start:6, max:12, perDay:0.12, host:true},
-  nullified: {label:'水榕（Nullified）', kind:'rosette', start:6, max:12, perDay:0.12, host:true},
+  rotala: {label:FLORA_TRADE.rotala.label, kind:'stem', start:12, max:30, perDay:0.8, host:false},
+  carpet: {label:FLORA_TRADE.carpet.label, kind:'carpet', start:60, max:150, perDay:3, host:false},
+  moss: {label:FLORA_TRADE.moss.label, kind:'moss', start:12, max:40, perDay:0.7, host:true},
+  pala: {label:FLORA_TRADE.pala.label, kind:'rosette', start:6, max:12, perDay:0.12, host:true},
+  nullified: {label:FLORA_TRADE.nullified.label, kind:'rosette', start:6, max:12, perDay:0.12, host:true},
 };
 export const FLORA_VARIANTS = 4;
 export const FLORA_LIMIT = 200;
-const VARIANT_MARK = ['甲', '乙', '丙', '丁'];
 export const FLORA_CATALOG = Object.entries(SPECIES).flatMap(([id, spec]) =>
-  Array.from({length:FLORA_VARIANTS}, (_, variant) => ({
-    id:`flora:${id}:${variant}`, species:id, variant, label:`${spec.label} · ${VARIANT_MARK[variant]}`, host:!!spec.host,
+  Array.from({length:catalogVariantCount(id)}, (_, variant) => ({
+    id:`flora:${id}:${variant}`, species:id, variant, label:floraCatalogLabel(id, variant), host:!!spec.host,
   }))
 );
 const DAY = 86400;
@@ -148,7 +148,8 @@ function random(seed) {
 }
 
 function base(rand, tankId, species, index) {
-  return {UniqueId:`${tankId}-${species}-${index}`, Species:species, Variant:Math.floor(rand() * FLORA_VARIANTS), Yaw:(rand() * 2 - 1) * Math.PI, Scale:0.85 + rand() * 0.3, Hue:rand() * 2 - 1};
+  const n = Math.max(1, catalogVariantCount(species) || FLORA_VARIANTS);
+  return {UniqueId:`${tankId}-${species}-${index}`, Species:species, Variant:Math.floor(rand() * n), Yaw:(rand() * 2 - 1) * Math.PI, Scale:0.85 + rand() * 0.3, Hue:rand() * 2 - 1};
 }
 
 /**

@@ -60,9 +60,11 @@ test('cached dense-leaf contact flow matches the rendered flow across stems and 
 });
 
 test('real Anubias replace the retired catalog and migrate old plants without losing attachment',()=>{
-  assert.equal(FLORA_CATALOG.filter(r=>r.species==='pala').length,4);
-  assert.equal(FLORA_CATALOG.filter(r=>r.species==='nullified').length,4);
-  assert.ok(!FLORA_CATALOG.some(r=>r.species==='anubias'||r.label.includes('小榕')));
+  assert.equal(FLORA_CATALOG.filter(r=>r.species==='pala').length,3);
+  assert.equal(FLORA_CATALOG.filter(r=>r.species==='nullified').length,1);
+  assert.ok(!FLORA_CATALOG.some(r=>r.species==='anubias'||/Pala|Nullified/i.test(r.label)));
+  assert.ok(FLORA_CATALOG.some(r=>r.label==='纳纳小榕 · 大叶'));
+  assert.ok(FLORA_CATALOG.some(r=>r.label==='巴氏榕'));
   assert.ok(!floraUnitMetrics().anubiasLeaf);
   const old=record('anubias','old-plant'),a=sanitizeFlora([old])[0];
   assert.ok(['pala','nullified'].includes(a.Species));
@@ -101,9 +103,18 @@ test('both models share instance geometry, follow host poses, prune and expose a
   host.position.x=.1;host.rotation.y=.6;host.updateMatrixWorld(true);flora.build(list,scene);before.getMatrixAt(0,matrix);
   assert.ok(new T.Vector3().setFromMatrixPosition(matrix).distanceTo(new T.Vector3().setFromMatrixPosition(original))>.09);
   assert.ok(new T.Quaternion().setFromRotationMatrix(matrix).angleTo(new T.Quaternion().setFromRotationMatrix(original))>.5);
-  const count=flora.stats().instances;pruneFlora(list[1]);flora.build(list,scene);assert.ok(flora.stats().instances<count);
+  const beforeLeaves=flora.stats().visibleLeaves;pruneFlora(list[1]);flora.build(list,scene);assert.ok(flora.stats().visibleLeaves<beforeLeaves);
   list[1].Nodes=12;pruneFlora(list[1]);assert.equal(list[1].Nodes,5,'a mature authored plant still loses an actual leaf group when pruned');
   const items=flora.collisionItems(list,scene);assert.equal(items.length,2);assert.ok(items.every(i=>i.samples.length>10&&i.geometry.attributes.floraSway));items.forEach(i=>i.geometry.dispose());
   assert.ok(flora.pearlSites().length>0);
   flora.build([],scene);assert.ok([...flora.meshes.values()].every(e=>!e.mesh.count));assert.equal(flora.pearlSites().length,0);
+});
+
+test('authored Anubias merge same-material parts so one plant is a handful of draws',()=>{
+  const {flora,scene}=fixture();
+  flora.build([record('nullified')],scene);
+  assert.ok(flora.stats().draws<=4,`nullified draws ${flora.stats().draws}`);
+  flora.build([record('pala'),record('nullified')],scene);
+  assert.ok(flora.stats().draws<=8,`pala+nullified draws ${flora.stats().draws}`);
+  assert.ok(flora.stats().visibleLeaves>0);
 });

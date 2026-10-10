@@ -21,10 +21,38 @@ function positions(flora, re) {
 
 test('procedural units read as plants, not sticks or lawn grass', () => {
   const m = floraUnitMetrics();
-  assert.ok(m.moss.y < 0.011, `moss is a low cushion, not upright grass ${m.moss.y}`);
-  assert.ok(m.moss.verts > 80, 'moss is a dense mat of tiny leaflets');
-  assert.ok(m.carpet.y < 0.012, 'carpet shoots stay low');
-  assert.ok(Math.max(m.rotalaLeaves.y, m.rotalaLeaves.z) > 0.006, 'rotala leaves have readable width');
+  assert.ok(m.moss.y < 0.022, `moss is a low draping cushion, not upright grass ${m.moss.y}`);
+  assert.ok(m.moss.verts > 400, `moss is a dense branching mat ${m.moss.verts}`);
+  assert.ok(m.moss.x > 0.012 && m.moss.z > 0.012, 'moss spreads across the host as a mat');
+  assert.ok(m.carpet.y < 0.008, `carpet shoots stay low ${m.carpet.y}`);
+  assert.ok(m.carpet.verts > 400, 'carpet is a mound of many tiny leaflets');
+  assert.ok(m.rotalaLeaves.x > m.rotalaLeaves.z * 1.7, `rotala is lanceolate, not a wide ellipse ${m.rotalaLeaves.x}×${m.rotalaLeaves.z}`);
+  assert.ok(m.rotalaLeaves.z < 0.008, 'rotala blades stay narrow');
+});
+
+test('carpet leaflets are round coins, not pointed triangles', () => {
+  const flora = view();
+  const geo = flora.units.carpet[0];
+  const p = geo.attributes.position, idx = geo.index.array;
+  const faces = new Map();
+  for (let i = 0; i < idx.length; i += 3) {
+    for (const v of [idx[i], idx[i + 1], idx[i + 2]]) {
+      if (!faces.has(v)) faces.set(v, []);
+      faces.get(v).push([idx[i], idx[i + 1], idx[i + 2]]);
+    }
+  }
+  let coins = 0;
+  for (const [v, tris] of faces) {
+    if (tris.length < 8 || tris.length > 12) continue;
+    const center = new T.Vector3().fromBufferAttribute(p, v);
+    const neighbors = new Set();
+    for (const t of tris) for (const i of t) if (i !== v) neighbors.add(i);
+    const radii = [...neighbors].map(i => new T.Vector3().fromBufferAttribute(p, i).distanceTo(center));
+    const mean = radii.reduce((s, r) => s + r, 0) / radii.length;
+    const spread = Math.max(...radii) - Math.min(...radii);
+    if (mean > 0.0004 && mean < 0.0022 && spread / mean < 0.28) coins++;
+  }
+  assert.ok(coins >= 30, `round coin leaflets ${coins}`);
 });
 
 test('one carpet plant spreads into an irregular lawn, not a single mound', () => {
@@ -37,6 +65,21 @@ test('one carpet plant spreads into an irregular lawn, not a single mound', () =
   const xs = pts.map(p => p.x), zs = pts.map(p => p.z);
   assert.ok(Math.max(...xs) - Math.min(...xs) > 0.03, 'spreads sideways');
   assert.ok(Math.max(...zs) - Math.min(...zs) > 0.02, 'spreads along the front');
+});
+
+test('moss mats cover a host with many overlapping patches', () => {
+  const flora = view();
+  const host = new T.Object3D();
+  host.name = 'W0 wood';
+  host.updateMatrixWorld(true);
+  flora.build([{UniqueId:'m1', Species:'moss', Variant:1, Yaw:0.4, Scale:1, Hue:0, Nodes:16, Host:'wood', Local:[0, 0.02, 0], Normal:[0, 1, 0]}], {
+    soil:{sample:() => 0.04}, habitat:{surfaces:[]}, entities:new Map([['wood', host]]),
+  });
+  const pts = positions(flora, /moss/);
+  assert.ok(pts.length >= 22, `moss patches ${pts.length}`);
+  const xs = pts.map(p => p.x), zs = pts.map(p => p.z);
+  assert.ok(Math.max(...xs) - Math.min(...xs) > 0.02, 'covers sideways along the host');
+  assert.ok(Math.max(...zs) - Math.min(...zs) > 0.015, 'covers along the host');
 });
 
 test('pearl sites sit on leaf instances of the new plants', () => {

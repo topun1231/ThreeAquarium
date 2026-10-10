@@ -1,9 +1,10 @@
 import * as T from 'three';
+import {unityPlantName} from './plant-names.js';
 
 export function plantEditor({aq,model,camera,canvas,getLayout,commit,mode,message}){
  const $=id=>document.getElementById(id),select=$('plant-choice'),undo=[],redo=[];
  let enabled=false,moving=false,chosen=null,busy=false;
- for(const p of model.source.plants){const name=aq.nodes[p.node].name.replace(/^Growing /,'').replace(/ [a-f0-9]{30,32}$/,'');select.add(new Option(`${select.length+1} · ${name==='One baked plant instance'?'后景茎草':name}`,p.record.UniqueId));aq.nodes[p.node].traverse(o=>{o.userData.plantId=p.record.UniqueId;});}
+ for(const p of model.source.plants){const name=unityPlantName(p.record.TypeId);select.add(new Option(`${select.length+1} · ${name}`,p.record.UniqueId));aq.nodes[p.node].traverse(o=>{o.userData.plantId=p.record.UniqueId;});}
  const marker=new T.Mesh(new T.RingGeometry(.010,.012,40),new T.MeshBasicMaterial({color:0xc7d894,side:T.DoubleSide,depthWrite:false}));marker.rotation.x=-Math.PI/2;marker.visible=false;aq.root.add(marker);
  function refresh(){chosen=select.value;const plant=model.byId.get(chosen);marker.visible=enabled;if(plant)marker.position.copy(aq.nodes[plant.node].position).add(new T.Vector3(0,.004,0));$('edit-plants').textContent=enabled?'完成调整':'调整水草';$('edit-plants').setAttribute('aria-pressed',String(enabled));$('plant-controls').hidden=!enabled;$('plant-move').textContent=moving?'点击底床落点 · Esc 取消':'移动到新位置';$('plant-undo').disabled=!undo.length||busy;$('plant-redo').disabled=!redo.length||busy;}
  async function change(next,kind='edit'){

@@ -7,6 +7,8 @@
 
 Runtime derivatives: `anubias/models.json`, `anubias/geometry.bin`, four shared `anubias/*.webp` textures. Both authors' credits and this modification record must remain with distributions.
 
+2026-10-10 HIGH-quality package pass: albedo maps capped at 2048 (8K wood/stone → 2048) and re-encoded as method-6 WebP q=86; normals capped at 2048 and stored as lossless WebP; packed metal/roughness/AO capped at 1024, q=82. Pala leaf cards resized to 1536×2048. These are further modifications of already adapted runtime copies, not the authors' originals.
+
 Existing approved source meshes and UVs were exported from the formal AQ_REAL002 scene. PNGs were converted to lossless WebP without changing dimensions or RGBA pixels. Unity smoothness/metallic channels are interpreted in the renderer.
 
 
