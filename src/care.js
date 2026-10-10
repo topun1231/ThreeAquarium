@@ -1,4 +1,5 @@
 import {stableSeed} from './state.js';
+import {realSpanLabel} from './ecology.js';
 
 const STATE = {Rest:'休息', Walk:'行走', Climb:'攀爬', Graze:'摄食', Groom:'清洁', Hide:'躲藏', RoutineSwim:'短游', EscapeSwim:'弹尾'};
 const DAY = 86400;
@@ -117,7 +118,7 @@ export function colonyTick(colony, agents, seconds, simSeconds, {richness = 0, l
       const record = next.shrimp[agent.data.CreatureId];
       if (!readyToBerry(agent, record, cursor, richness, treatNow, room)) continue;
       record.hatchAt = cursor + BERRY_DAYS * DAY;
-      pushJournal(next, cursor, `${record.name}抱卵，约 ${BERRY_DAYS} 天后孵出`);
+      pushJournal(next, cursor, `${record.name}抱卵，${countdown(BERRY_DAYS)}`);
     }
   }
   return {colony:next, hatches};
@@ -128,6 +129,10 @@ export function noteTreat(colony, pelletBusy) {
   if (pelletBusy || next.treat >= TREAT_BONUS) return {colony:next, stacked:false};
   next.treat = TREAT_BONUS;
   return {colony:next, stacked:true};
+}
+
+function countdown(ecologyDays, verb = '孵出') {
+  return `约 ${ecologyDays} 天后${verb}（${realSpanLabel(ecologyDays)}）`;
 }
 
 function dayLabel(seconds) {
@@ -154,7 +159,7 @@ export function shrimpDetail(agent, record, simSeconds) {
   const daysLeft = record.hatchAt == null ? null : Math.max(0, Math.ceil((record.hatchAt - simSeconds) / DAY));
   const stage = record.ageDays < MATURITY_DAYS ? `幼体 ${Math.floor(record.ageDays)} 天` : `成体 ${Math.floor(record.ageDays)} 天`;
   const sex = isFemale(agent.data.CreatureId) ? '母' : '公';
-  const berry = daysLeft == null ? '' : ` · 抱卵，约 ${daysLeft} 天后孵出`;
+  const berry = daysLeft == null ? '' : ` · 抱卵，${countdown(daysLeft)}`;
   return `${record.favorite ? '★ ' : ''}${record.name} · ${sex} · ${stage}${berry}\n饥饿 ${Math.round(needs.Hunger * 100)}% · 压力 ${Math.round(needs.Stress * 100)}% · 疲劳 ${Math.round(needs.Fatigue * 100)}%`;
 }
 
@@ -169,7 +174,7 @@ export function careSummary(agents, colony, {simSeconds = 0, plants = [], defini
   if (grazing) headline += ` · 觅食中 ${grazing}`;
   if (berried.length) {
     const soon = Math.min(...berried.map(record => Math.max(0, Math.ceil((record.hatchAt - simSeconds) / DAY))));
-    headline += ` · 抱卵 ${berried.length} 只，约 ${soon} 天后孵出`;
+    headline += ` · 抱卵 ${berried.length} 只，${countdown(soon)}`;
   }
   if (agents.length >= POP_CAP) headline += ' · 虾群已满（50）';
   else if (!berried.length && richness >= 0.45) headline += ' · 成熟母虾会慢慢抱卵';

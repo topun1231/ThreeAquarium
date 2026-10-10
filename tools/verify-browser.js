@@ -2,7 +2,7 @@ async page => {
  const result={date:new Date().toISOString(),checks:[],errors:[]};
  page.on('pageerror',e=>result.errors.push(e.message));page.on('console',m=>{if(m.type()==='error'||/GL_INVALID|Shader Error|PropertyBinding/.test(m.text()))result.errors.push(m.text());});
  const check=(ok,label)=>{if(!ok)throw new Error(label);result.checks.push(label);};
- await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});
+ await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});await page.evaluate(()=>window.showDock?.('all'));
  const preserved=await page.evaluate(()=>[localStorage.getItem('aquarium.three.creatures.v1'),localStorage.getItem('aquarium.three.migration.v1')]);
  try{
  check(await page.locator('#action').inputValue()==='Auto','opens in autonomous mode');
@@ -16,7 +16,7 @@ async page => {
  await page.locator('#pause').click();const paused=await page.evaluate(()=>aquarium.world.snapshot());await page.waitForTimeout(350);check(await page.evaluate(s=>JSON.stringify(aquarium.world.snapshot())===JSON.stringify(s),paused),'pause freezes needs, food and movement');
  await page.locator('#save').click();const stored=await page.evaluate(()=>JSON.parse(localStorage.getItem('aquarium.three.creatures.v1')));
  const download=page.waitForEvent('download');await page.locator('#export').click();const file=await download;await file.saveAs('evidence/browser-roundtrip.json');
- await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});await page.locator('#pause').click();
+ await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});await page.evaluate(()=>window.showDock?.('all'));await page.locator('#pause').click();
  const restored=await page.evaluate(()=>aquarium.world.snapshot());check(restored.creatures.every(c=>stored.creatures.some(s=>s.CreatureId===c.CreatureId&&JSON.stringify(s.Personality)===JSON.stringify(c.Personality))),'reload preserves all identities and personalities');
  check(restored.creatures.every(c=>Math.abs(c.Needs.Hunger-stored.creatures.find(s=>s.CreatureId===c.CreatureId).Needs.Hunger)<.01),'reload retains needs');
  const validSaved=await page.evaluate(()=>localStorage.getItem('aquarium.three.creatures.v1'));
@@ -36,6 +36,6 @@ async page => {
  return result;
  }finally{
   await page.evaluate(values=>{aquarium.renderer.setAnimationLoop(null);['aquarium.three.creatures.v1','aquarium.three.migration.v1'].forEach((key,i)=>{if(values[i]===null)localStorage.removeItem(key);else localStorage.setItem(key,values[i]);});Storage.prototype.setItem=function(){};},preserved);
-  await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});
+  await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});await page.evaluate(()=>window.showDock?.('all'));
  }
 }

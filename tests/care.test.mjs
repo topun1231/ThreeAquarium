@@ -97,14 +97,14 @@ test('care text leads with condition and keeps hunger on the selected shrimp', (
   const text = careSummary([calm, grazing], colony, {simSeconds:sim, richness:0.8});
   assert.match(text, /^状态良好/);
   assert.match(text, /觅食中 1/);
-  assert.match(text, /抱卵 1 只，约 3 天后孵出/);
+  assert.match(text, /抱卵 1 只，约 3 天后孵出（现实约 12 小时）/);
   assert.match(text, /生态第 11 天/);
   assert.match(text, /收藏：★小红/);
   assert.doesNotMatch(text, /偏饿/);
   const detail = shrimpDetail(calm, colony.shrimp[id], sim);
   assert.match(detail, /★ 小红/);
   assert.match(detail, /饥饿 20%/);
-  assert.match(detail, /约 3 天后孵出/);
+  assert.match(detail, /约 3 天后孵出（现实约 12 小时）/);
   assert.deepEqual(favoriteRoster([grazing, calm], colony).map(item => item.id), [id]);
 });
 

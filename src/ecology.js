@@ -1,4 +1,9 @@
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+/** Ecology seconds advanced for each real second. 6 means 4 real hours = 1 ecology day. */
+export const ECOLOGY_RATE=6;
+export function ecologySeconds(realSeconds){return Math.max(0,realSeconds)*ECOLOGY_RATE;}
+export function ecologyRateCaption(){const hours=24/ECOLOGY_RATE,shown=Number.isInteger(hours)?String(hours):String(Math.round(hours*10)/10);return `游戏 1 天 = 现实 ${shown} 小时`;}
+export function realSpanLabel(ecologyDays){const hours=Math.max(0,ecologyDays)*(24/ECOLOGY_RATE);if(hours<1)return '现实不到 1 小时';if(hours<48)return `现实约 ${Math.round(hours)} 小时`;const days=hours/24,shown=Math.round(days*10)/10;return `现实约 ${shown} 天`;}
 export function curve(keys,t){
  if(!keys?.length)throw new Error('植物生长曲线缺失');
  if(t<=keys[0].time)return keys[0].value;

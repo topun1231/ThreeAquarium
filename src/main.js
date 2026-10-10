@@ -29,7 +29,15 @@ const WELCOME_KEY='aquarium.three.welcome.v1';
 function dismissWelcome(){const node=$('welcome');if(node)node.hidden=true;try{localStorage.setItem(WELCOME_KEY,'1');}catch{}message('点一只虾，就可以给它起名或标成收藏');}
 try{if(localStorage.getItem(WELCOME_KEY)!=='1'&&$('welcome'))$('welcome').hidden=false;}catch{}
 $('welcome-dismiss').onclick=dismissWelcome;
-function reset(){if(!aq)return;const c=aq.pack.camera;camera.position.copy(mirror(c.position));controls.target.copy(mirror(c.target));camera.fov=c.fov;camera.updateProjectionMatrix();controls.update();selected=null;$('selection').textContent='整缸观察';}
+const DOCKS=['observe','care','scene','time','keep'];
+function showDock(name){const pop=$('dock-popover');if(!pop)return;const tabs=[...document.querySelectorAll('#dock-bar [data-dock]')];const hide=()=>{pop.hidden=true;pop.classList.remove('dock-unbounded');for(const id of DOCKS){const sec=$('col-'+id);if(sec)sec.hidden=true;}tabs.forEach(b=>b.setAttribute('aria-expanded','false'));};if(!name){hide();return;}if(name==='all'){pop.hidden=false;pop.classList.add('dock-unbounded');for(const id of DOCKS){const sec=$('col-'+id);if(sec)sec.hidden=false;}tabs.forEach(b=>b.setAttribute('aria-expanded','true'));return;}const section=$('col-'+name);if(!section)return;const already=!pop.hidden&&!section.hidden&&!pop.classList.contains('dock-unbounded');if(already){hide();return;}const care=$('care-pop');if(care)care.hidden=true;$('care-chip')?.setAttribute('aria-expanded','false');pop.classList.remove('dock-unbounded');pop.hidden=false;for(const id of DOCKS){const sec=$('col-'+id);if(sec)sec.hidden=id!==name;}tabs.forEach(b=>b.setAttribute('aria-expanded',String(b.dataset.dock===name)));}
+function closeCare(){const pop=$('care-pop');if(pop)pop.hidden=true;$('care-chip')?.setAttribute('aria-expanded','false');}
+function closeLayers(){showDock('');closeCare();}
+window.showDock=showDock;
+$('dock-bar')?.addEventListener('click',e=>{const tab=e.target.closest('[data-dock]');if(tab)showDock(tab.dataset.dock);});
+$('care-chip')?.addEventListener('click',()=>{const pop=$('care-pop'),chip=$('care-chip');if(!pop||!chip)return;const opening=pop.hidden;pop.hidden=!opening;chip.setAttribute('aria-expanded',String(opening));if(opening)showDock('');});
+document.addEventListener('pointerdown',e=>{if(e.target.closest('#dock-popover,#dock-bar,#care-pop,#shrimp-card,#care-chip,#panel-toggle,#quiet-exit,.welcome'))return;closeLayers();});
+function reset(){if(!aq)return;const c=aq.pack.camera;camera.position.copy(mirror(c.position));controls.target.copy(mirror(c.target));camera.fov=c.fov;camera.updateProjectionMatrix();controls.update();selected=null;$('selection').textContent='整缸观察';const card=$('shrimp-card');if(card)card.hidden=true;}
 function progress(){return {version:1,tankId:aq.pack.tankId,camera:camera.position.toArray(),target:controls.target.toArray(),action:$('action').value};}
 function apply(value){const p=validateProgress(value,aq.pack.tankId);camera.position.fromArray(p.camera);controls.target.fromArray(p.target);$('action').value=p.action;setAction(p.action);controls.update();}
 function snapshot(){return full?full.snapshot():{...world.snapshot(),layout:structuredClone(layout)};}
@@ -68,7 +76,7 @@ $('import').onchange=async e=>{const file=e.target.files[0];if(!file||!world||bu
  accumulator=0;lastSave=world.elapsed;apply(view);try{localStorage.setItem(SAVE_KEY,JSON.stringify(view));}catch{}editor?.refresh();message(game?'虾与食物进度已恢复，水草布局已同步':'旧视角进度已恢复');
  }catch(err){message('导入失败：'+err.message);}finally{e.target.value='';lock(false);}};
 window.addEventListener('pagehide',()=>{if(world)saveGame();});
-window.addEventListener('keydown',e=>{if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))return;if(editor?.key(e)){e.preventDefault();return;}if(e.key.startsWith('Arrow')){e.preventDefault();keys.add(e.key);}if(e.key.toLowerCase()==='r'||e.key==='Escape')reset();});
+window.addEventListener('keydown',e=>{if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))return;if(editor?.key(e)){e.preventDefault();return;}if(e.key.startsWith('Arrow')){e.preventDefault();keys.add(e.key);}if(e.key.toLowerCase()==='r'||e.key==='Escape')reset();if(e.key==='Escape')closeLayers();});
 window.addEventListener('keyup',e=>keys.delete(e.key));window.addEventListener('blur',()=>keys.clear());
 window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 let down=null;renderer.domElement.addEventListener('pointerdown',e=>{down=[e.clientX,e.clientY];});

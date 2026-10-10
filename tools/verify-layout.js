@@ -1,7 +1,7 @@
 async page => {
  const result={date:new Date().toISOString(),checks:[],errors:[]},check=(ok,label)=>{if(!ok)throw new Error(label);result.checks.push(label);};
  page.on('pageerror',e=>result.errors.push(e.message));
- await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});
+ await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});await page.evaluate(()=>window.showDock?.('all'));
  const original=await page.evaluate(()=>({game:localStorage.getItem('aquarium.three.creatures.v1'),view:localStorage.getItem('aquarium.three.migration.v1')}));
  const id='0c99a3418eb243ccafbe47f737b57daa';
  try{
@@ -30,7 +30,7 @@ async page => {
   await page.mouse.click(leaf.x,leaf.y);check(await page.locator('#plant-choice').inputValue()===id,'clicking an actual leaf selects its plant');
   await page.screenshot({path:'evidence/layout-runtime.png'});
   const download=page.waitForEvent('download');await page.locator('#export').click();await (await download).saveAs('evidence/layout-roundtrip.json');
-  await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});await page.locator('#pause').click();
+  await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});await page.evaluate(()=>window.showDock?.('all'));await page.locator('#pause').click();
   check(await page.evaluate(layout=>JSON.stringify(aquarium.layout)===JSON.stringify(layout),edited.layout),'reload restores edited layout');
   check(await page.evaluate(p=>aquarium.aq.nodes.find(n=>n.userData.plantId===p.id).position.toArray().every((v,i)=>Math.abs(v-p.pos[i])<1e-10),{id,pos:edited.position}),'reload restores visible root exactly');
   const stored=await page.evaluate(()=>localStorage.getItem('aquarium.three.creatures.v1'));
@@ -48,7 +48,7 @@ async page => {
   await page.waitForFunction(()=>document.getElementById('message').textContent.includes('已同步'));
   check(await page.evaluate(()=>aquarium.layout.length===0),'legacy version 2 import uses original layout');
   await page.evaluate(()=>{aquarium.renderer.setAnimationLoop(null);localStorage.setItem('aquarium.three.creatures.v1',JSON.stringify({version:1,layout:null}));Storage.prototype.setItem=function(){};});
-  await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});
+  await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});await page.evaluate(()=>window.showDock?.('all'));
   check(await page.locator('#message').textContent().then(s=>s.includes('已保留')),'invalid stored layout opens fallback with recovery message');
   const invalid=await page.evaluate(()=>localStorage.getItem('aquarium.three.creatures.v1'));await page.locator('#save').click();
   check(await page.evaluate(s=>localStorage.getItem('aquarium.three.creatures.v1')===s,invalid),'fallback does not overwrite invalid stored progress');
@@ -56,6 +56,6 @@ async page => {
  }finally{
   await page.evaluate(original=>{if(window.originalSetItem){Storage.prototype.setItem=window.originalSetItem;delete window.originalSetItem;}aquarium.renderer.setAnimationLoop(null);for(const [key,value] of [['aquarium.three.creatures.v1',original.game],['aquarium.three.migration.v1',original.view]]){if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}Storage.prototype.setItem=function(){};},original);
   // The old page's pagehide save is suppressed; reload gets a fresh Storage prototype.
-  await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});
+  await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:60000});await page.evaluate(()=>window.showDock?.('all'));
  }
 }

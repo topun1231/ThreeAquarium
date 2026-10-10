@@ -1,6 +1,6 @@
 async page=>{
  const report={errors:[],samples:[]};page.on('pageerror',e=>report.errors.push(e.message));page.on('console',m=>{if(m.type()==='error')report.errors.push(m.text());});
- await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:90000});const before=await page.evaluate(()=>localStorage.getItem('aquarium.three.creatures.v1'));
+ await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:90000});await page.evaluate(()=>window.showDock?.('all'));const before=await page.evaluate(()=>localStorage.getItem('aquarium.three.creatures.v1'));
  try{
   await page.locator('#population-tools').evaluate(el=>{el.open=true;});await page.locator('#shrimp-count').fill('50');const begin=Date.now();await page.locator('#shrimp-apply').click();await page.waitForFunction(()=>aquarium.world.agents.length===50,null,{timeout:30000});report.add50ms=Date.now()-begin;
   if(!await page.evaluate(()=>aquarium.game.data.Tank.Environment.LightOn))await page.locator('#tank-light').click();await page.locator('#reset').click();await page.evaluate(()=>aquarium.game.feedAt({x:.09,y:.035,z:-.2}));

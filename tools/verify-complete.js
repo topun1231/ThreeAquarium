@@ -1,7 +1,7 @@
 async page=>{
  const report={checks:[],errors:[]},check=(value,label)=>{if(!value)throw new Error(label);report.checks.push(label);};
  page.on('pageerror',e=>report.errors.push(e.message));page.on('console',m=>{if(m.type()==='error')report.errors.push(m.text());});
- await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:90000});
+ await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:90000});await page.evaluate(()=>window.showDock?.('all'));
  const keys=['aquarium.three.creatures.v1','aquarium.three.migration.v1','aquarium.three.previous'],before=await page.evaluate(keys=>Object.fromEntries(keys.map(k=>[k,localStorage.getItem(k)])),keys);
  try{
   await page.locator('#pause').click();await page.evaluate(()=>aquarium.game.ensure());const original=await page.evaluate(()=>aquarium.game.snapshot());
@@ -28,7 +28,7 @@ async page=>{
   report.feet=await page.evaluate(()=>({probes:aquarium.feet.probes,maxSlip:aquarium.feet.maxSlip}));check(report.feet.probes>0&&Number.isFinite(report.feet.maxSlip),'near-view foot contact solver runs with finite output');
   for(const name of ['Rest','Walk','Graze','Groom','RoutineSwim','EscapeSwim']){await page.locator('#action').selectOption(name);await page.waitForTimeout(150);check(await page.evaluate(n=>aquarium.aq.animals.every(a=>a.active===n&&a.rig.matrixWorld.elements.every(Number.isFinite)),name),'original action '+name);}
   await page.locator('#action').selectOption('Rest');await page.screenshot({path:'evidence/full-near.png'});await page.locator('#action').selectOption('Auto');await page.locator('#reset').click();await page.screenshot({path:'evidence/full-runtime.png'});
-  await page.evaluate(()=>{aquarium.renderer.setAnimationLoop(null);localStorage.setItem('aquarium.three.creatures.v1','{"broken":');Storage.prototype.setItem=function(){};});await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:90000});await page.locator('#save').click();check(await page.evaluate(()=>localStorage.getItem('aquarium.three.creatures.v1')==='{"broken":'),'broken storage survives reload and manual save');
+  await page.evaluate(()=>{aquarium.renderer.setAnimationLoop(null);localStorage.setItem('aquarium.three.creatures.v1','{"broken":');Storage.prototype.setItem=function(){};});await page.reload();await page.waitForFunction(()=>window.aquarium?.ready,null,{timeout:90000});await page.evaluate(()=>window.showDock?.('all'));await page.locator('#save').click();check(await page.evaluate(()=>localStorage.getItem('aquarium.three.creatures.v1')==='{"broken":'),'broken storage survives reload and manual save');
   check(report.errors.length===0,'no shader or browser errors');
  }catch(e){report.failure=e.message;report.message=await page.locator('#message').textContent();}
  finally{await page.evaluate(before=>{aquarium.renderer.setAnimationLoop(null);for(const [key,value]of Object.entries(before)){if(value===null)localStorage.removeItem(key);else localStorage.setItem(key,value);}Storage.prototype.setItem=function(){};},before);await page.reload();}
