@@ -1,5 +1,6 @@
 import {Substrate,sanitizeSubstrateKind} from './substrate.js';
 import {sanitizeColony} from './care.js';
+import {sanitizeFlora} from './flora.js';
 const finite=(v,a,b)=>Number.isFinite(v)&&v>=a&&v<=b;
 export function validateSession(value,runtime){
  if(!value||value.SaveVersion!==1||!value.Tank||!finite(value.SimulationSeconds,0,1e12)||!Number.isFinite(Date.parse(value.LastSaveUtc)))throw new Error('完整鱼缸存档无效');
@@ -13,6 +14,7 @@ export function validateSession(value,runtime){
  for(const key of ['PlantGrowthMultiplier','TankMaturityMultiplier','EvaporationMultiplier','AlgaeGrowthMultiplier','MaintenancePressureMultiplier'])if(!finite(s.Rates?.[key],0,1000))throw new Error('生态倍率无效');
  if(!tank.Environment||!['WaterLevel','Stability','Cleanliness','Algae'].every(k=>finite(tank.Environment[k],0,1))||typeof tank.Environment.LightOn!=='boolean')throw new Error('水环境记录无效');
  if(s.Colony!=null)s.Colony=sanitizeColony(s.Colony);
+ if(tank.Flora!=null)tank.Flora=sanitizeFlora(tank.Flora);
  sanitizeSubstrateKind(tank.Substrate);
  new Substrate(runtime.settings,tank.Substrate);return s;
 }

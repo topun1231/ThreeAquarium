@@ -1,3 +1,4 @@
+import {growFlora} from './flora.js';
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
 /** Ecology seconds advanced for each real second. 6 means 4 real hours = 1 ecology day. */
 export const ECOLOGY_RATE=6;
@@ -27,6 +28,7 @@ export function advanceEcology(save,definitions,seconds){
   p.Cuts=p.Cuts.filter(c=>(p.EcologicalAgeSeconds-c.EcologicalAgeAtCut)/86400<d.TrimRecoveryDays);
  }
  settleContinuousGrowth(save.Tank.Plants,definitions);
+ growFlora(save.Tank.Flora,seconds,save.Rates.PlantGrowthMultiplier);
 }
 export function plantStructureChanged(before,after){
  if(!before||!after||before.length!==after.length)return true;

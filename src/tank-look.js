@@ -2,9 +2,9 @@ import * as T from 'three';
 
 const KEY = 'aquarium.three.quality.v1';
 const PRESETS = {
-  high: {fog:0.22, caustic:0.42, particles:36, bubbles:true, shafts:true, bubbleEvery:8},
-  medium: {fog:0.12, caustic:0.26, particles:16, bubbles:true, shafts:false, bubbleEvery:16},
-  low: {fog:0, caustic:0, particles:0, bubbles:false, shafts:false, bubbleEvery:0},
+  high: {fog:0.22, caustic:0.42, particles:36, bubbles:true, shafts:true, bubbleEvery:8, floraDensity:1, floraShadows:true, shrimpDetail:'full'},
+  medium: {fog:0.12, caustic:0.26, particles:16, bubbles:true, shafts:false, bubbleEvery:16, floraDensity:0.7, floraShadows:true, shrimpDetail:'near'},
+  low: {fog:0, caustic:0, particles:0, bubbles:false, shafts:false, bubbleEvery:0, floraDensity:0.45, floraShadows:false, shrimpDetail:'basic'},
 };
 
 export function qualityPreset(level) {
@@ -58,7 +58,7 @@ function installCaustics(materials, time, gain) {
       previous?.(shader, renderer);
       shader.uniforms.aqCTime = time;
       shader.uniforms.aqCGain = gain;
-      shader.vertexShader = header + shader.vertexShader.replace('#include <project_vertex>', 'aqCausticPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\n#include <project_vertex>');
+      shader.vertexShader = header + shader.vertexShader.replace('#include <project_vertex>', 'vec4 aqCP = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\naqCP = instanceMatrix * aqCP;\n#endif\naqCausticPos = (modelMatrix * aqCP).xyz;\n#include <project_vertex>');
       shader.fragmentShader = header + shader.fragmentShader.replace('#include <opaque_fragment>', `
         float aqBelow = 1.0 - smoothstep(0.52, 0.585, aqCausticPos.y);
         float aqInside = step(abs(aqCausticPos.x), 0.6) * step(abs(aqCausticPos.z), 0.31) * step(-0.002, aqCausticPos.y);
@@ -71,7 +71,7 @@ function installCaustics(materials, time, gain) {
         outgoingLight *= 1.0 + aqBand * aqCGain * 2.2 * aqBelow * aqPool * aqInside;
         #include <opaque_fragment>`);
     };
-    material.customProgramCacheKey = () => `${previousKey ? previousKey() : material.uuid}:caustic1`;
+    material.customProgramCacheKey = () => `${previousKey ? previousKey() : material.uuid}:caustic2`;
     material.needsUpdate = true;
   }
 }
@@ -161,6 +161,7 @@ export function installTankLook({scene, aq, water}) {
   const bubbles = makeBubbles();
   scene.add(drift, shafts, bubbles);
   let level = 'high';
+  const listeners = [];
   let nextStream = 4;
   function apply(next) {
     level = PRESETS[next] ? next : 'high';
@@ -173,6 +174,7 @@ export function installTankLook({scene, aq, water}) {
     shafts.visible = preset.shafts;
     if (!preset.bubbles) bubbles.children.forEach(mesh => { mesh.visible = false; mesh.userData.life = 0; });
     remember(level);
+    for (const fn of listeners) fn(PRESETS[level], level);
     const select = document.getElementById('view-quality');
     if (select && select.value !== level) select.value = level;
   }
@@ -193,6 +195,8 @@ export function installTankLook({scene, aq, water}) {
   return {
     get level(){ return level; },
     setQuality: apply,
+    get preset(){ return PRESETS[level]; },
+    onChange(fn){ listeners.push(fn); fn(PRESETS[level], level); },
     update(now) {
       time.value = now;
       const preset = PRESETS[level];
