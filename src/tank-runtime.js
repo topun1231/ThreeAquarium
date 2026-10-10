@@ -50,10 +50,12 @@ export class TankRuntime {
   if(this.catalog)return this.catalog;
   if(!this._catalogPending){
    this._catalogPending=(async()=>{
-    const checked=async r=>{if(!r.ok)throw new Error('资源读取失败 '+r.url);return r;};
-    const buffer=await fetch('/assets/catalog-geometry.bin').then(checked).then(r=>r.arrayBuffer());
-    this.catalog=await loadAquarium(progress,{pack:this.data.assets,buffer});
-    return this.catalog;
+    try{
+     const checked=async r=>{if(!r.ok)throw new Error('资源读取失败 '+r.url);return r;};
+     const buffer=await fetch('/assets/catalog-geometry.bin').then(checked).then(r=>r.arrayBuffer());
+     this.catalog=await loadAquarium(progress,{pack:this.data.assets,buffer});
+     return this.catalog;
+    }catch(e){this._catalogPending=null;throw e;}
    })();
   }
   return this._catalogPending;

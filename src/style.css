@@ -96,6 +96,8 @@ aside::-webkit-scrollbar-thumb { background: rgba(216, 204, 176, .28); border-ra
   #panel-toggle, #quiet-exit { top: 12px; right: 12px; bottom: auto; }
 }
 details:not([open]) > :not(summary) { display: none; }
+#catalog-error { margin: 8px 0; padding: 10px 12px; border: 1px solid rgba(216, 196, 163, .35); border-radius: 12px; background: rgba(72, 24, 18, .55); color: #f6e6d8; font-size: 12px; line-height: 1.5; }
+#catalog-error button { width: auto; min-height: 36px; margin: 8px 0 0; }
 #asset-credits { margin-top: 10px; }
 #asset-credits .credits-note { margin: 8px 0; font-size: 12px; color: #b7c4b2; }
 .credits-list { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.55; color: #d9cbb3; }
