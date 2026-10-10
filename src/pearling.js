@@ -49,7 +49,7 @@ export function createPearling({root, sites, lightOn, waterLevel}) {
     const site = catalog[Math.floor(Math.random() * catalog.length)];
     idle.userData = {life:0, cling:CLING * (0.7 + Math.random() * 0.6), site, phase:Math.random() * 6.28, vigor:site.vigor || 1};
     idle.position.set(site.x, site.y, site.z);
-    idle.scale.setScalar(0.00035);
+    idle.scale.setScalar(0.00048);
     idle.visible = true;
     next = now + (0.18 + Math.random() * 0.55) / Math.max(0.15, rate * (site.vigor || 1));
   }
@@ -70,7 +70,7 @@ export function createPearling({root, sites, lightOn, waterLevel}) {
         if (u.life < 0) continue;
         u.life += dt;
         const clinging = u.life < u.cling;
-        const grown = 0.00028 + Math.min(0.0007, u.life * 0.00018) * u.vigor;
+        const grown = 0.00042 + Math.min(0.00095, u.life * 0.00024) * u.vigor;
         if (clinging) {
           mesh.position.set(u.site.x, u.site.y, u.site.z);
           mesh.scale.setScalar(grown * (0.55 + 0.45 * u.life / u.cling));
