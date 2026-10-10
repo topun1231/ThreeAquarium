@@ -108,10 +108,11 @@ export function installShrimpLook({record, simSeconds}) {
   function showEggs(animal, look, progress) {
     if (!look.eggs) {
       const material = new T.MeshStandardMaterial({name:'Shrimp eggs', color:'#d9a531', roughness:0.32, emissive:'#3a2208', emissiveIntensity:0.25});
-      look.eggs = new T.Mesh(eggGeometry, material);
+      look.eggs = new T.Mesh(eggGeometry.clone(), material);
       look.eggs.name = 'Shrimp eggs';
       look.eggs.castShadow = false;
       look.eggs.userData.creatureId = animal.id;
+      look.eggs.userData.eggs = true;
       look.attached = false;
     }
     if (!look.attached && look.bones.eggHost) {
