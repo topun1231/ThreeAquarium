@@ -93,12 +93,12 @@ const UNITS = {
   carpet(v, rand) {
     const parts = [];
     for (let i = 0, shoots = 7 + (v % 3); i < shoots; i++) {
-      const h = 0.0016 + rand() * 0.0032, ox = (rand() - 0.5) * 0.0042, oz = (rand() - 0.5) * 0.0042;
+      const h = 0.0015 + rand() * 0.0028, ox = (rand() - 0.5) * 0.0042, oz = (rand() - 0.5) * 0.0042;
       parts.push(placed(stalk(0.00011, h, 0.84, 4), {x:ox, z:oz}));
-      for (let k = 0, n = 2 + (rand() > 0.4 ? 1 : 0); k < n; k++) {
-        const length = 0.0017 + rand() * 0.0015;
-        const leaf = blade({length, width:length * (0.94 + rand() * 0.16), round:0.36, cup:0.14, curl:(rand() - 0.5) * 0.1, droop:0.02, rows:5, cols:2, midrib:0.04});
-        parts.push(placed(leaf, {x:ox + (rand() - 0.5) * 0.0014, y:h * (0.5 + rand() * 0.55), z:oz + (rand() - 0.5) * 0.0014, yaw:i * 2.3 + k * 2.0 + rand(), pitch:0.2 + rand() * 0.75, roll:(rand() - 0.5) * 0.45}));
+      for (let k = 0, n = 2 + (rand() > 0.35 ? 1 : 0); k < n; k++) {
+        const length = 0.0016 + rand() * 0.0013;
+        const leaf = blade({length, width:length * (1.02 + rand() * 0.12), round:0.28, cup:0.12, curl:(rand() - 0.5) * 0.08, droop:0.015, rows:6, cols:3, midrib:0.03});
+        parts.push(placed(leaf, {x:ox + (rand() - 0.5) * 0.0012, y:h * (0.5 + rand() * 0.55), z:oz + (rand() - 0.5) * 0.0012, yaw:i * 2.3 + k * 2.0 + rand(), pitch:0.25 + rand() * 0.7, roll:(rand() - 0.5) * 0.35}));
       }
     }
     return merge(parts);
@@ -120,24 +120,24 @@ const UNITS = {
     return merge(parts);
   },
   anubiasLeaf(v, rand) {
-    const petiole = 0.0048 + v * 0.0007, lean = 0.14 + rand() * 0.16;
-    const length = 0.03 + v * 0.004, width = 0.018 + (v % 3) * 0.0026 + rand() * 0.002;
-    const leaf = blade({length, width, round:0.56, cup:0.07, curl:-0.035 - rand() * 0.03, droop:0.05 + rand() * 0.04, wave:0.045, heart:0.6, rows:12, cols:5, midrib:0.2});
-    const stem = paint(stalk(0.0004, petiole, 1, 6), c => c.setRGB(0.58, 0.74, 0.44));
+    const petiole = 0.0028 + v * 0.00045, lean = 0.08 + rand() * 0.1;
+    const length = 0.028 + v * 0.0036, width = 0.017 + (v % 3) * 0.0024 + rand() * 0.0018;
+    const leaf = blade({length, width, round:0.54, cup:0.06, curl:-0.03 - rand() * 0.025, droop:0.04 + rand() * 0.03, wave:0.05, heart:0.55, rows:12, cols:5, midrib:0.22});
+    const stem = paint(stalk(0.00032, petiole, 1, 5), c => c.setRGB(0.42, 0.5, 0.34));
     return merge([
       stem.applyMatrix4(new T.Matrix4().makeRotationZ(-lean)),
-      placed(leaf, {x:Math.sin(lean) * petiole, y:Math.cos(lean) * petiole, pitch:0.72 + rand() * 0.2, yaw:(rand() - 0.5) * 0.22, roll:(rand() - 0.5) * 0.12}),
+      placed(leaf, {x:Math.sin(lean) * petiole, y:Math.cos(lean) * petiole, pitch:0.88 + rand() * 0.16, yaw:(rand() - 0.5) * 0.18, roll:(rand() - 0.5) * 0.1}),
     ]);
   },
   rhizome() {
-    const body = new T.CapsuleGeometry(0.00165, 1, 3, 7).rotateZ(Math.PI / 2).translate(0.5, 0, 0);
+    const body = new T.CapsuleGeometry(0.00115, 0.03, 4, 8).rotateZ(Math.PI / 2).translate(0.015, 0, 0);
     body.deleteAttribute('uv');
-    const parts = [paint(body, (c, x, y) => c.setRGB(0.62 + y * 10, 0.56, 0.36))];
-    for (let i = 0; i < 4; i++) {
-      const ring = new T.TorusGeometry(0.0017, 0.00032, 5, 8);
-      ring.rotateY(Math.PI / 2).translate(0.16 + i * 0.22, 0, 0);
-      ring.deleteAttribute('uv');
-      parts.push(paint(ring, c => c.setRGB(0.52, 0.5, 0.32)));
+    const parts = [paint(body, (c, x, y) => c.setRGB(0.55 + Math.abs(y) * 20, 0.42, 0.26))];
+    for (let i = 0; i < 5; i++) {
+      const knob = new T.SphereGeometry(0.00135 + (i % 2) * 0.00025, 7, 5);
+      knob.translate(0.004 + i * 0.0055, (i % 2 ? 0.0004 : -0.0003), (i % 3 - 1) * 0.00035);
+      knob.deleteAttribute('uv');
+      parts.push(paint(knob, c => c.setRGB(0.5, 0.4, 0.24)));
     }
     return merge(parts);
   },
@@ -145,7 +145,7 @@ const UNITS = {
 
 const COLORS = {
   rotalaBase:new T.Color('#3a6b2c'), rotalaMid:new T.Color('#8d6234'), rotalaTip:new T.Color('#c4544c'), rotalaStem:new T.Color('#5c3a28'),
-  carpet:new T.Color('#3a7228'), moss:new T.Color('#1a2c16'), anubias:new T.Color('#2c5532'), anubiasYoung:new T.Color('#628a3c'), rhizome:new T.Color('#5a5840'),
+  carpet:new T.Color('#2f5c22'), moss:new T.Color('#1a2c16'), anubias:new T.Color('#355c38'), anubiasYoung:new T.Color('#6a8f40'), rhizome:new T.Color('#6a5334'),
 };
 
 function swayMaterial(name, {color = '#ffffff', roughness = 0.62, amplitude, height, time, thin = 0.18, clearcoat = 0}) {
@@ -371,17 +371,17 @@ export class FloraView {
         } else {
           const along = new T.Vector3(Math.cos(record.Yaw), 0, Math.sin(record.Yaw)).projectOnPlane(normal).normalize();
           if (along.lengthSq() < 0.5) along.copy(tangent);
-          const length = 0.014 + n * 0.0024;
+          const length = 0.018 + n * 0.003;
           const start = snap(anchor.clone().addScaledVector(along, -length / 2));
           tmp.q.setFromUnitVectors(new T.Vector3(1, 0, 0), along);
-          add('rhizome', 0, new T.Matrix4().compose(start.clone().addScaledVector(normal, 0.0018), tmp.q.clone(), new T.Vector3(length, 1.2, 1.2)), COLORS.rhizome.clone(), [start.x, start.y, start.z, phase], {id:record.UniqueId, node:0});
+          add('rhizome', 0, new T.Matrix4().compose(start.clone().addScaledVector(normal, 0.0014), tmp.q.clone(), new T.Vector3(length / 0.03, 0.7, 1)), COLORS.rhizome.clone(), [start.x, start.y, start.z, phase], {id:record.UniqueId, node:0});
           for (let k = 0; k < n; k++) {
-            const t = (k + 0.2 + rand() * 0.45) / n, at = start.clone().addScaledVector(along, length * t).addScaledVector(normal, 0.0024);
-            const young = k >= n - 2, age = k / Math.max(1, n - 1);
-            const size = record.Scale * (young ? 0.55 + rand() * 0.14 : 0.82 + age * 0.28 + rand() * 0.12);
-            const yaw = Math.atan2(-along.z, along.x) + (k * 2.39996) + (rand() - 0.5) * 0.7;
-            tmp.q.setFromUnitVectors(UP, UP.clone().lerp(normal, 0.1).normalize()).multiply(tmp.q2.setFromAxisAngle(UP, yaw));
-            const color = (young ? COLORS.anubiasYoung : COLORS.anubias).clone().offsetHSL(hueShift, (rand() - 0.5) * 0.05, (rand() - 0.5) * 0.05 - (k === 0 ? 0.04 : 0));
+            const t = (k + 0.18 + rand() * 0.2) / n, at = start.clone().addScaledVector(along, length * t).addScaledVector(normal, 0.002);
+            const young = k >= n - 2, age = 1 - k / Math.max(1, n - 1);
+            const size = record.Scale * (young ? 0.52 + rand() * 0.12 : 0.78 + age * 0.32 + rand() * 0.1);
+            const yaw = Math.atan2(-along.z, along.x) + (k / Math.max(1, n - 1) - 0.5) * 2.6 + (rand() - 0.5) * 0.35;
+            tmp.q.setFromUnitVectors(UP, UP.clone().lerp(normal, 0.08).normalize()).multiply(tmp.q2.setFromAxisAngle(UP, yaw));
+            const color = (young ? COLORS.anubiasYoung : COLORS.anubias).clone().offsetHSL(hueShift, (rand() - 0.5) * 0.04, (rand() - 0.5) * 0.04);
             add('anubiasLeaf', (record.Variant + k) % FLORA_VARIANTS, new T.Matrix4().compose(at, tmp.q.clone(), new T.Vector3(size, size, size)), color, [start.x, start.y, start.z, phase], {id:record.UniqueId, node:k});
           }
         }

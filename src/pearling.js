@@ -15,9 +15,9 @@ function pearlMaterial() {
     fragmentShader:`varying vec3 vN;varying vec3 vV;uniform float aqAlpha;
       void main(){
         float fres=pow(1.0-abs(dot(normalize(vN),normalize(vV))),2.4);
-        vec3 rim=vec3(0.82,0.93,0.90);
-        vec3 core=vec3(0.22,0.38,0.36);
-        gl_FragColor=vec4(mix(core,rim,fres),aqAlpha*(0.18+0.82*fres));
+        vec3 rim=vec3(0.88,0.96,0.94);
+        vec3 core=vec3(0.28,0.42,0.40);
+        gl_FragColor=vec4(mix(core,rim,fres),aqAlpha*(0.28+0.72*fres));
       }`,
   });
 }
@@ -70,7 +70,7 @@ export function createPearling({root, sites, lightOn, waterLevel}) {
         if (u.life < 0) continue;
         u.life += dt;
         const clinging = u.life < u.cling;
-        const grown = 0.00042 + Math.min(0.00095, u.life * 0.00024) * u.vigor;
+        const grown = 0.00055 + Math.min(0.0012, u.life * 0.0003) * u.vigor;
         if (clinging) {
           mesh.position.set(u.site.x, u.site.y, u.site.z);
           mesh.scale.setScalar(grown * (0.55 + 0.45 * u.life / u.cling));
