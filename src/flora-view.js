@@ -69,56 +69,65 @@ function merge(list) {
 
 const UNITS = {
   rotalaLeaves(v, rand) {
-    const length = 0.0098 + v * 0.0006, width = length * (0.42 + 0.06 * (v % 2));
-    const leaf = blade({length, width, round:0.85, cup:0.35, curl:0.12 + v * 0.03, droop:0.05});
-    const lift = 0.62 + 0.1 * rand();
-    return merge([placed(leaf, {pitch:lift, yaw:0}), placed(leaf, {pitch:lift, yaw:Math.PI})]);
+    const length = 0.011 + v * 0.0007, width = length * (0.26 + 0.04 * (v % 2));
+    const leaf = blade({length, width, round:1.15, cup:0.18, curl:0.08 + v * 0.02, droop:0.08, rows:7, cols:2, midrib:0.16});
+    const lift = 0.42 + 0.18 * rand();
+    const yawJitter = (rand() - 0.5) * 0.22;
+    return merge([placed(leaf, {pitch:lift, yaw:yawJitter}), placed(leaf, {pitch:lift + (rand() - 0.5) * 0.12, yaw:Math.PI + yawJitter * 0.4})]);
   },
-  rotalaStem() { return stalk(0.00072, 1, 0.8); },
+  rotalaStem() { return stalk(0.00042, 1, 0.78, 5); },
   carpet(v, rand) {
-    const parts = [stalk(0.00026, 0.0045 + v * 0.0008, 0.8, 4)];
-    const count = 3 + (v % 3), top = 0.0045 + v * 0.0008;
+    const parts = [stalk(0.00018, 0.0032 + v * 0.0005, 0.75, 4)];
+    const count = 5 + (v % 3);
     for (let i = 0; i < count; i++) {
-      const leaf = blade({length:0.0031 + rand() * 0.0006, width:0.0027, round:0.6, cup:0.25, curl:0.05, rows:4, cols:2});
-      parts.push(placed(leaf, {y:top - rand() * 0.0012, yaw:i / count * Math.PI * 2 + rand() * 0.6, pitch:0.15 + rand() * 0.35}));
+      const length = 0.0022 + rand() * 0.0014, width = length * (0.78 + rand() * 0.25);
+      const leaf = blade({length, width, round:0.45, cup:0.22, curl:(rand() - 0.5) * 0.12, droop:0.04, rows:4, cols:2, midrib:0.08});
+      parts.push(placed(leaf, {y:0.001 + rand() * 0.0028, yaw:i * 2.1 + rand() * 1.4, pitch:0.05 + rand() * 0.85, roll:(rand() - 0.5) * 0.4, scale:0.7 + rand() * 0.6}));
     }
-    if (v >= 2) parts.push(placed(blade({length:0.0026, width:0.0023, round:0.6, rows:3, cols:2}), {y:0.0018, yaw:rand() * 6, pitch:0.1}));
     return merge(parts);
   },
   moss(v, rand) {
-    const parts = [], strands = 8 + v * 2;
-    for (let i = 0; i < strands; i++) {
-      const yaw = i / strands * Math.PI * 2 + rand() * 0.8, pitch = 0.2 + rand() * 0.9, length = 0.0045 + rand() * 0.0035;
-      const frond = blade({length, width:0.0009, round:1.2, cup:0, curl:-0.15, droop:0.25, rows:4, cols:1, midrib:0});
-      parts.push(placed(frond, {yaw, pitch}));
-      for (let k = 0; k < 2; k++) parts.push(placed(blade({length:length * 0.45, width:0.0006, rows:2, cols:1, midrib:0}), {x:Math.cos(yaw) * length * (0.35 + k * 0.3) * Math.cos(pitch), y:Math.sin(pitch) * length * (0.35 + k * 0.3), z:-Math.sin(yaw) * length * (0.35 + k * 0.3) * Math.cos(pitch), yaw:yaw + (k ? -0.9 : 0.9), pitch:pitch * 0.6}));
+    const parts = [];
+    const addStrand = (x, y, z, yaw, pitch, length, width) => {
+      parts.push(placed(blade({length, width, round:1.4, cup:0, curl:-0.28, droop:0.55, rows:5, cols:1, midrib:0}), {x, y, z, yaw, pitch}));
+      const n = 1 + (length > 0.005 ? 2 : 1);
+      for (let k = 0; k < n; k++) {
+        const t = 0.25 + k * 0.28 + rand() * 0.1;
+        parts.push(placed(blade({length:length * (0.28 + rand() * 0.22), width:width * 0.7, round:1.3, curl:-0.2, droop:0.4, rows:3, cols:1, midrib:0}), {
+          x:x + Math.cos(yaw) * length * t * Math.cos(pitch), y:y + Math.sin(pitch) * length * t, z:z - Math.sin(yaw) * length * t * Math.cos(pitch),
+          yaw:yaw + (rand() - 0.5) * 1.8, pitch:pitch * 0.45 + (rand() - 0.5) * 0.8,
+        }));
+      }
+    };
+    for (let i = 0; i < 11 + v; i++) {
+      addStrand((rand() - 0.5) * 0.004, rand() * 0.001, (rand() - 0.5) * 0.004, rand() * 6.28, 0.15 + rand() * 1.3, 0.0035 + rand() * 0.0065, 0.00038 + rand() * 0.00028);
     }
     return merge(parts);
   },
   anubiasLeaf(v, rand) {
-    const petiole = 0.0055 + v * 0.0008, lean = 0.75 + 0.08 * v;
-    const leaf = blade({length:0.017 + v * 0.0013, width:0.0135 + (v % 2) * 0.0012, round:0.55, cup:0.18, curl:-0.04, droop:0.1, rows:9, cols:4, midrib:0.25});
-    const stem = stalk(0.00065, petiole, 0.7, 5);
-    const tip = new T.Vector3(0, petiole, 0);
-    return merge([stem.applyMatrix4(new T.Matrix4().makeRotationZ(-lean)), placed(leaf, {x:Math.sin(lean) * tip.y, y:Math.cos(lean) * tip.y, pitch:0.3 - rand() * 0.15})]);
+    const petiole = 0.006 + v * 0.0011, lean = 0.55 + rand() * 0.35;
+    const leaf = blade({length:0.016 + v * 0.002, width:0.011 + (v % 2) * 0.0018, round:0.62, cup:0.14, curl:-0.07 - rand() * 0.04, droop:0.12, rows:10, cols:4, midrib:0.22});
+    const stem = stalk(0.00048, petiole, 0.62, 5);
+    return merge([stem.applyMatrix4(new T.Matrix4().makeRotationZ(-lean)), placed(leaf, {x:Math.sin(lean) * petiole, y:Math.cos(lean) * petiole, pitch:0.18 + rand() * 0.22, roll:(rand() - 0.5) * 0.15})]);
   },
   rhizome() {
-    const geo = new T.CapsuleGeometry(0.0015, 1, 3, 6).rotateZ(Math.PI / 2).translate(0.5, 0, 0);
+    const geo = new T.CapsuleGeometry(0.00095, 1, 3, 6).rotateZ(Math.PI / 2).translate(0.5, 0, 0);
     geo.deleteAttribute('uv');
-    return paint(geo, (c, x, y) => c.setScalar(0.85 + y * 40));
+    return paint(geo, (c, x, y) => c.setScalar(0.72 + y * 30));
   },
 };
 
 const COLORS = {
-  rotalaBase:new T.Color('#5f8e3a'), rotalaMid:new T.Color('#b0723a'), rotalaTip:new T.Color('#c23d2c'), rotalaStem:new T.Color('#8a4030'),
-  carpet:new T.Color('#5a9a36'), moss:new T.Color('#44692a'), anubias:new T.Color('#2f5a2c'), anubiasYoung:new T.Color('#6c9440'), rhizome:new T.Color('#4f5233'),
+  rotalaBase:new T.Color('#4e7a38'), rotalaMid:new T.Color('#9a6a3c'), rotalaTip:new T.Color('#b85a48'), rotalaStem:new T.Color('#6a3d2c'),
+  carpet:new T.Color('#4f8a32'), moss:new T.Color('#2f4a22'), anubias:new T.Color('#1e3f24'), anubiasYoung:new T.Color('#5a7a38'), rhizome:new T.Color('#3a3d28'),
 };
 
-function swayMaterial(name, {color = '#ffffff', roughness = 0.62, amplitude, height, time}) {
+function swayMaterial(name, {color = '#ffffff', roughness = 0.62, amplitude, height, time, thin = 0.18}) {
   const material = new T.MeshStandardMaterial({name, color, roughness, metalness:0, vertexColors:true, side:T.DoubleSide});
   material.onBeforeCompile = shader => {
     shader.uniforms.aqFloraTime = time;
     shader.uniforms.aqFloraSway = {value:new T.Vector2(amplitude, height)};
+    shader.uniforms.aqFloraThin = {value:thin};
     shader.vertexShader = 'attribute vec4 aqStem;\nuniform float aqFloraTime;\nuniform vec2 aqFloraSway;\n' + shader.vertexShader.replace('#include <project_vertex>', `
       #ifdef USE_INSTANCING
       {
@@ -132,8 +141,18 @@ function swayMaterial(name, {color = '#ffffff', roughness = 0.62, amplitude, hei
       }
       #endif
       #include <project_vertex>`);
+    shader.fragmentShader = 'uniform float aqFloraThin;\n' + shader.fragmentShader.replace('#include <lights_physical_pars_fragment>', `#include <lights_physical_pars_fragment>
+      void AQFloraDirect(const in IncidentLight light, const in vec3 p, const in vec3 n, const in vec3 v, const in vec3 nc, const in PhysicalMaterial material, inout ReflectedLight reflectedLight){
+        RE_Direct_Physical(light,p,n,v,nc,material,reflectedLight);
+        float d=dot(n,light.direction);
+        float wrap=max(0.,(d+.45)/1.45)-max(0.,d);
+        float back=max(0.,-d);
+        reflectedLight.directDiffuse+=material.diffuseColor*light.color*(wrap*.28+back*aqFloraThin);
+      }
+      #undef RE_Direct
+      #define RE_Direct AQFloraDirect`);
   };
-  material.customProgramCacheKey = () => 'flora-sway-v1';
+  material.customProgramCacheKey = () => 'flora-sway-v2';
   return material;
 }
 
@@ -150,12 +169,12 @@ export class FloraView {
     this.signature = '';
     const t = this.time;
     this.materials = {
-      rotalaLeaves:swayMaterial('Flora rotala leaf', {amplitude:0.0045, height:0.22, time:t, roughness:0.55}),
-      rotalaStem:swayMaterial('Flora rotala stem', {amplitude:0.0045, height:0.22, time:t, roughness:0.7}),
-      carpet:swayMaterial('Flora carpet', {amplitude:0.0005, height:0.008, time:t, roughness:0.6}),
-      moss:swayMaterial('Flora moss', {amplitude:0.0007, height:0.008, time:t, roughness:0.85}),
-      anubiasLeaf:swayMaterial('Flora anubias leaf', {amplitude:0.0012, height:0.03, time:t, roughness:0.3}),
-      rhizome:swayMaterial('Flora rhizome', {amplitude:0.0002, height:0.03, time:t, roughness:0.8}),
+      rotalaLeaves:swayMaterial('Flora rotala leaf', {amplitude:0.0045, height:0.22, time:t, roughness:0.52, thin:0.32}),
+      rotalaStem:swayMaterial('Flora rotala stem', {amplitude:0.0045, height:0.22, time:t, roughness:0.74, thin:0.04}),
+      carpet:swayMaterial('Flora carpet', {amplitude:0.0005, height:0.008, time:t, roughness:0.58, thin:0.22}),
+      moss:swayMaterial('Flora moss', {amplitude:0.0007, height:0.008, time:t, roughness:0.88, thin:0.08}),
+      anubiasLeaf:swayMaterial('Flora anubias leaf', {amplitude:0.0012, height:0.03, time:t, roughness:0.28, thin:0.12}),
+      rhizome:swayMaterial('Flora rhizome', {amplitude:0.0002, height:0.03, time:t, roughness:0.82, thin:0}),
     };
     aq.materials.push(...Object.values(this.materials));
     this.units = {};
@@ -239,34 +258,37 @@ export class FloraView {
       const hueShift = record.Hue * 0.035;
       if (spec.kind === 'stem') {
         const baseY = soil.sample(record.X, record.Z) - 0.004, base = new T.Vector3(record.X, baseY, record.Z), stem = [base.x, base.y, base.z, phase];
-        const lean = new T.Vector3(Math.cos(record.Yaw), 0, Math.sin(record.Yaw)).multiplyScalar(0.18 + rand() * 0.16);
+        const light = new T.Vector3((rand() - 0.5) * 0.15, 0.35, -0.55).normalize();
+        const lean = light.clone().multiplyScalar(0.22 + rand() * 0.2).add(new T.Vector3(Math.cos(record.Yaw), 0, Math.sin(record.Yaw)).multiplyScalar(0.08));
         let p = base.clone();
         for (let k = 0; k < n; k++) {
           const t = n > 1 ? k / (n - 1) : 1, fromTip = n - 1 - k;
-          const dir = UP.clone().addScaledVector(lean, 0.4 + 0.6 * t).add(new T.Vector3((rand() - 0.5) * 0.06, 0, (rand() - 0.5) * 0.06)).normalize();
-          const L = 0.0112 * record.Scale * (k < 2 ? 0.75 : 1) * (fromTip < 3 ? 0.55 + fromTip * 0.15 : 1);
+          const dir = UP.clone().addScaledVector(lean, 0.25 + 0.9 * t * t).add(new T.Vector3((rand() - 0.5) * 0.11, 0, (rand() - 0.5) * 0.08)).normalize();
+          const L = (0.009 + rand() * 0.0045) * record.Scale * (fromTip < 2 ? 0.62 + fromTip * 0.12 : 1);
           tmp.q.setFromUnitVectors(UP, dir);
-          add('rotalaStem', 0, new T.Matrix4().compose(p.clone(), tmp.q.clone(), new T.Vector3(1, L, 1)), COLORS.rotalaStem.clone().offsetHSL(hueShift, 0, (t - 0.5) * 0.08), stem, {id:record.UniqueId, node:k});
+          add('rotalaStem', 0, new T.Matrix4().compose(p.clone(), tmp.q.clone(), new T.Vector3(1, L, 1)), COLORS.rotalaStem.clone().offsetHSL(hueShift, -0.05, (t - 0.4) * 0.06), stem, {id:record.UniqueId, node:k});
           p = p.clone().addScaledVector(dir, L);
-          const size = record.Scale * (fromTip === 0 ? 0.42 : fromTip === 1 ? 0.62 : fromTip === 2 ? 0.82 : k < 2 ? 0.8 : 1);
-          const leafColor = (t < 0.5 ? COLORS.rotalaBase.clone() : t < 0.78 ? COLORS.rotalaBase.clone().lerp(COLORS.rotalaMid, (t - 0.5) / 0.28) : COLORS.rotalaMid.clone().lerp(COLORS.rotalaTip, (t - 0.78) / 0.22)).offsetHSL(hueShift, 0, (rand() - 0.5) * 0.04);
-          if (k < 2 && n > 6) leafColor.lerp(new T.Color('#6f7a3a'), 0.4);
-          tmp.q2.setFromAxisAngle(UP, record.Yaw + k * Math.PI / 2 + (rand() - 0.5) * 0.25);
+          const skipLower = k < n * 0.28 && rand() < 0.45;
+          if (skipLower) continue;
+          const size = record.Scale * (0.38 + 0.62 * Math.min(1, fromTip / 5)) * (0.88 + rand() * 0.22);
+          const leafColor = (t < 0.42 ? COLORS.rotalaBase.clone() : t < 0.72 ? COLORS.rotalaBase.clone().lerp(COLORS.rotalaMid, (t - 0.42) / 0.3) : COLORS.rotalaMid.clone().lerp(COLORS.rotalaTip, (t - 0.72) / 0.28)).offsetHSL(hueShift + (rand() - 0.5) * 0.03, (rand() - 0.55) * 0.12, (rand() - 0.5) * 0.06);
+          if (k < 3) leafColor.offsetHSL(0, -0.12, -0.08);
+          tmp.q2.setFromAxisAngle(UP, record.Yaw + k * Math.PI / 2 + (rand() - 0.5) * 0.45);
           add('rotalaLeaves', (record.Variant + k) % FLORA_VARIANTS, new T.Matrix4().compose(p.clone(), tmp.q.clone().multiply(tmp.q2), new T.Vector3(size, size, size)), leafColor, stem, {id:record.UniqueId, node:k});
-          if (fromTip === 0) {
-            tmp.q2.setFromAxisAngle(UP, record.Yaw + k * Math.PI / 2 + Math.PI / 4);
-            add('rotalaLeaves', record.Variant, new T.Matrix4().compose(p.clone().addScaledVector(dir, 0.0012), tmp.q.clone().multiply(tmp.q2), new T.Vector3(size * 0.6, size * 0.6, size * 0.6)), COLORS.rotalaTip.clone().offsetHSL(hueShift, 0, 0.04), stem, {id:record.UniqueId, node:k});
-          }
         }
       } else if (spec.kind === 'carpet') {
+        const clumps = 3 + (n > 80 ? 2 : 0);
         for (let i = 0; i < n; i++) {
           if (random(stableSeed(record.UniqueId + i))() > this.density) continue;
-          const angle = i * 2.39996 + record.Yaw, lobe = 1 + 0.32 * Math.sin(angle * 3 + record.Hue * 4) + 0.18 * Math.sin(angle * 5 + record.Yaw), radius = 0.0043 * Math.sqrt(i + 0.5) * record.Scale * lobe + (rand() - 0.5) * 0.004;
-          const x = record.X + Math.cos(angle) * radius, z = record.Z + Math.sin(angle) * radius;
+          const clump = i % clumps, cr = random(stableSeed(record.UniqueId + ':c' + clump));
+          const mound = 0.006 + cr() * 0.01, edge = cr() * 6.28;
+          const radius = mound * Math.pow(rand(), 0.55) * (0.7 + 0.5 * Math.sin(edge * 2 + record.Hue));
+          const x = record.X + Math.cos(edge + rand()) * radius + (rand() - 0.5) * 0.003 + Math.cos(clump * 2.3 + record.Yaw) * 0.006;
+          const z = record.Z + Math.sin(edge + rand() * 0.4) * radius * 0.85 + (rand() - 0.5) * 0.003 + Math.sin(clump * 1.7) * 0.005;
           if (Math.abs(x) > 0.57 || Math.abs(z) > 0.275) continue;
-          const y = soil.sample(x, z) - 0.0008, size = (0.75 + rand() * 0.5) * (i > n - 8 ? 0.65 : 1);
-          tmp.q.setFromAxisAngle(UP, rand() * 6.28);
-          add('carpet', (record.Variant + i) % FLORA_VARIANTS, new T.Matrix4().compose(new T.Vector3(x, y, z), tmp.q.clone(), new T.Vector3(size, size, size)), COLORS.carpet.clone().offsetHSL(hueShift + (rand() - 0.5) * 0.03, (rand() - 0.5) * 0.15, (rand() - 0.5) * 0.12 - (i < n * 0.3 ? 0.05 : 0)), [x, y, z, phase + i * 0.3], {id:record.UniqueId, node:i});
+          const y = soil.sample(x, z) - 0.0006, size = (0.55 + rand() * 0.7) * record.Scale;
+          tmp.q.setFromEuler(new T.Euler((rand() - 0.5) * 0.35, rand() * 6.28, (rand() - 0.5) * 0.25, 'YXZ'));
+          add('carpet', (record.Variant + clump + i) % FLORA_VARIANTS, new T.Matrix4().compose(new T.Vector3(x, y, z), tmp.q.clone(), new T.Vector3(size, size * (0.75 + rand() * 0.4), size)), COLORS.carpet.clone().offsetHSL(hueShift + (rand() - 0.5) * 0.04, (rand() - 0.5) * 0.18, (rand() - 0.5) * 0.14), [x, y, z, phase + i * 0.3], {id:record.UniqueId, node:i});
         }
       } else {
         const matrix = this.host(scene, record.Host);
@@ -291,9 +313,10 @@ export class FloraView {
             const angle = i * 2.39996 + record.Yaw, radius = 0.0036 * Math.sqrt(i + 0.4) * record.Scale;
             const guess = anchor.clone().addScaledVector(tangent, Math.cos(angle) * radius).addScaledVector(bitangent, Math.sin(angle) * radius);
             const at = snap(guess).addScaledVector(normal, -0.0006);
-            tmp.q.setFromUnitVectors(UP, normal.clone().lerp(UP, 0.35).normalize()).multiply(tmp.q2.setFromAxisAngle(UP, rand() * 6.28));
-            const size = (0.8 + rand() * 0.5) * record.Scale;
-            add('moss', (record.Variant + i) % FLORA_VARIANTS, new T.Matrix4().compose(at, tmp.q.clone(), new T.Vector3(size, size * (0.8 + rand() * 0.4), size)), COLORS.moss.clone().offsetHSL(hueShift + (rand() - 0.5) * 0.02, 0, (rand() - 0.5) * 0.05), [at.x, at.y, at.z, phase + i], {id:record.UniqueId, node:i});
+            const drape = Math.max(0, 0.55 - normal.y);
+            tmp.q.setFromUnitVectors(UP, normal.clone().lerp(new T.Vector3(0, -0.35, 0), 0.25 + drape).normalize()).multiply(tmp.q2.setFromAxisAngle(UP, rand() * 6.28));
+            const size = (0.7 + rand() * 0.7) * record.Scale;
+            add('moss', (record.Variant + i) % FLORA_VARIANTS, new T.Matrix4().compose(at, tmp.q.clone(), new T.Vector3(size, size * (0.9 + rand() * 0.6), size)), COLORS.moss.clone().offsetHSL(hueShift + (rand() - 0.5) * 0.015, (rand() - 0.5) * 0.08, (rand() - 0.5) * 0.06), [at.x, at.y, at.z, phase + i], {id:record.UniqueId, node:i});
           }
         } else {
           const along = new T.Vector3(Math.cos(record.Yaw), 0, Math.sin(record.Yaw)).projectOnPlane(normal).normalize();
@@ -303,11 +326,11 @@ export class FloraView {
           tmp.q.setFromUnitVectors(new T.Vector3(1, 0, 0), along);
           add('rhizome', 0, new T.Matrix4().compose(start.clone().addScaledVector(normal, 0.0012), tmp.q.clone(), new T.Vector3(length, 1, 1)), COLORS.rhizome.clone(), [start.x, start.y, start.z, phase], {id:record.UniqueId, node:0});
           for (let k = 0; k < n; k++) {
-            const t = (k + 0.5) / n, at = start.clone().addScaledVector(along, length * t).addScaledVector(normal, 0.002);
-            const young = k === n - 1, size = record.Scale * (young ? 0.6 : 0.82 + rand() * 0.25);
-            const side = k % 2 ? 1 : -1, yaw = Math.atan2(-along.z, along.x) + side * (0.7 + rand() * 0.9) + (k / n - 0.5) * 0.6;
-            tmp.q.setFromUnitVectors(UP, UP.clone().lerp(normal, 0.25).normalize()).multiply(tmp.q2.setFromAxisAngle(UP, yaw));
-            const color = (young ? COLORS.anubiasYoung : COLORS.anubias).clone().offsetHSL(hueShift, 0, (rand() - 0.5) * 0.05);
+            const t = (k + 0.35 + rand() * 0.3) / n, at = start.clone().addScaledVector(along, length * t).addScaledVector(normal, 0.0016);
+            const young = k === n - 1, size = record.Scale * (young ? 0.48 + rand() * 0.12 : 0.7 + rand() * 0.45);
+            const side = k % 2 ? 1 : -1, yaw = Math.atan2(-along.z, along.x) + side * (0.55 + rand() * 1.1) + (rand() - 0.5) * 0.5;
+            tmp.q.setFromUnitVectors(UP, UP.clone().lerp(normal, 0.2).normalize()).multiply(tmp.q2.setFromAxisAngle(UP, yaw));
+            const color = (young ? COLORS.anubiasYoung : COLORS.anubias).clone().offsetHSL(hueShift, (rand() - 0.5) * 0.06, (rand() - 0.5) * 0.07 - (k === 0 ? 0.06 : 0));
             add('anubiasLeaf', (record.Variant + k) % FLORA_VARIANTS, new T.Matrix4().compose(at, tmp.q.clone(), new T.Vector3(size, size, size)), color, [start.x, start.y, start.z, phase], {id:record.UniqueId, node:k});
           }
         }
@@ -353,6 +376,24 @@ export class FloraView {
   }
 
   update(time) { this.time.value = time; }
+
+  pearlSites() {
+    const sites = [], matrix = new T.Matrix4(), tip = new T.Vector3();
+    for (const {mesh} of this.meshes.values()) {
+      if (!mesh.visible || !mesh.count) continue;
+      const name = mesh.name || '';
+      if (!/rotalaLeaves|carpet|moss|anubiasLeaf/.test(name)) continue;
+      const vigor = /rotala/.test(name) ? 1.35 : /anubias/.test(name) ? 0.55 : 0.7;
+      const keep = /rotala/.test(name) ? 0.18 : 0.07;
+      for (let i = 0; i < mesh.count; i++) {
+        if (random(stableSeed(name + ':' + i))() > keep * this.density) continue;
+        mesh.getMatrixAt(i, matrix);
+        tip.set(0.007, 0.001, 0).applyMatrix4(matrix);
+        sites.push({x:tip.x, y:tip.y, z:tip.z, vigor});
+      }
+    }
+    return sites;
+  }
 
   stats() {
     let instances = 0, draws = 0;
