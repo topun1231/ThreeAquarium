@@ -7,7 +7,7 @@ test('picture quality can turn the heavy water effects off', () => {
   assert.equal(qualityPreset('low').fog, 0);
   assert.equal(qualityPreset('low').particles, 0);
   assert.equal(qualityPreset('low').shafts, false);
-  assert.equal(qualityPreset('low').bubbles, false);
+  assert.equal(qualityPreset('low').pearling, 0);
   assert.ok(qualityPreset('high').caustic > qualityPreset('medium').caustic);
   assert.ok(qualityPreset('high').fog <= 0.25);
   assert.equal(qualityPreset('high').shafts, true);

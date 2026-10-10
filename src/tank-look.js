@@ -2,21 +2,28 @@ import * as T from 'three';
 
 const KEY = 'aquarium.three.quality.v1';
 const PRESETS = {
-  high: {fog:0.22, caustic:0.42, particles:36, bubbles:true, shafts:true, bubbleEvery:8},
-  medium: {fog:0.12, caustic:0.26, particles:16, bubbles:true, shafts:false, bubbleEvery:16},
-  low: {fog:0, caustic:0, particles:0, bubbles:false, shafts:false, bubbleEvery:0},
+  high: {fog:0.22, caustic:0.42, particles:36, shafts:true, pearling:1},
+  medium: {fog:0.12, caustic:0.26, particles:16, shafts:false, pearling:0.5},
+  low: {fog:0, caustic:0, particles:0, shafts:false, pearling:0},
 };
 
 export function qualityPreset(level) {
   return PRESETS[level] || PRESETS.high;
 }
 
-export function initialQuality() {
+export function initialQuality(storage = globalThis.localStorage, narrow = () => matchMedia('(max-width: 700px)').matches) {
   try {
-    const saved = localStorage.getItem(KEY);
+    const saved = storage?.getItem(KEY);
     if (PRESETS[saved]) return saved;
   } catch {}
-  return matchMedia('(max-width: 700px)').matches ? 'low' : 'high';
+  return narrow() ? 'low' : 'high';
+}
+
+/** The saved choice wins over the dropdown's markup default; the dropdown is then made to show it. */
+export function startQuality(select, storage, narrow) {
+  const level = initialQuality(storage, narrow);
+  if (select) select.value = level;
+  return level;
 }
 
 function remember(level) {
@@ -123,19 +130,6 @@ function makeShafts() {
   return group;
 }
 
-function makeBubbles() {
-  const geo = new T.SphereGeometry(0.0042, 8, 6);
-  const group = new T.Group();
-  group.name = 'tank-bubbles';
-  for (let i = 0; i < 10; i++) {
-    const mesh = new T.Mesh(geo, new T.MeshBasicMaterial({color:'#e9f7f2', transparent:true, opacity:0, depthWrite:false}));
-    mesh.visible = false;
-    mesh.userData.life = 0;
-    group.add(mesh);
-  }
-  return group;
-}
-
 export function installTankLook({scene, aq, water}) {
   const skip = new Set();
   for (const mesh of aq.meshes) {
@@ -158,10 +152,8 @@ export function installTankLook({scene, aq, water}) {
   let causticsOn = false;
   const drift = makeDrift(36);
   const shafts = makeShafts();
-  const bubbles = makeBubbles();
-  scene.add(drift, shafts, bubbles);
+  scene.add(drift, shafts);
   let level = 'high';
-  let nextStream = 4;
   function apply(next) {
     level = PRESETS[next] ? next : 'high';
     const preset = PRESETS[level];
@@ -171,24 +163,12 @@ export function installTankLook({scene, aq, water}) {
     drift.visible = preset.particles > 0;
     drift.geometry.setDrawRange(0, preset.particles);
     shafts.visible = preset.shafts;
-    if (!preset.bubbles) bubbles.children.forEach(mesh => { mesh.visible = false; mesh.userData.life = 0; });
     remember(level);
     const select = document.getElementById('view-quality');
     if (select && select.value !== level) select.value = level;
   }
-  function stream() {
-    const x = (Math.random() - 0.5) * 0.7;
-    const z = (Math.random() - 0.5) * 0.32;
-    bubbles.children.forEach((mesh, index) => {
-      mesh.visible = true;
-      mesh.position.set(x + (Math.random() - 0.5) * 0.012, 0.03 + index * 0.012, z);
-      mesh.userData.life = 1;
-      mesh.userData.speed = 0.045 + Math.random() * 0.03;
-      mesh.material.opacity = 0.6;
-    });
-  }
   const select = document.getElementById('view-quality');
-  apply(select?.value && PRESETS[select.value] ? select.value : initialQuality());
+  apply(startQuality(select));
   select?.addEventListener('change', () => apply(select.value));
   return {
     get level(){ return level; },
@@ -209,19 +189,6 @@ export function installTankLook({scene, aq, water}) {
           positions.setY(i, y);
         }
         positions.needsUpdate = true;
-      }
-      if (preset.bubbles) {
-        let alive = false;
-        for (const mesh of bubbles.children) {
-          if (mesh.userData.life <= 0) continue;
-          alive = true;
-          mesh.userData.life -= 0.004;
-          mesh.position.y += mesh.userData.speed * 0.016;
-          mesh.position.x += Math.sin(now * 2 + mesh.position.y * 20) * 0.0002;
-          mesh.material.opacity = Math.max(0, mesh.userData.life) * 0.65;
-          if (mesh.position.y > 0.56 || mesh.userData.life <= 0) { mesh.visible = false; mesh.userData.life = 0; }
-        }
-        if (!alive && now > nextStream) { stream(); nextStream = now + preset.bubbleEvery; }
       }
     },
   };
