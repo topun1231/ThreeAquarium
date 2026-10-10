@@ -49,6 +49,8 @@ export class TankRuntime {
   }
   return this._catalogPending;
  }
+ // Catalog leaf-sway clock. The sample tank uses scene meshes, so this is a no-op until a clone is loaded.
+ update(dt,now){this.catalog?.update?.(dt,now);}
  cloneOriginal(record){const original=this.originals.get(record.UniqueId);if(!original)return null;const node=original.clone(true);node.visible=true;const world=mirror.clone().multiply(original.matrixWorld);world.decompose(node.position,node.quaternion,node.scale);
   const before=this.originalRecords.get(record.UniqueId),delta=new T.Matrix4().compose(vec(record.Position),rotation(record.Rotation),vec(record.Scale)).multiply(new T.Matrix4().compose(vec(before.Position),rotation(before.Rotation),vec(before.Scale)).invert());node.applyMatrix4(delta);return node;
  }
