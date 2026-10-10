@@ -1,6 +1,7 @@
 import * as T from 'three';
 import {vec,up,head,face,peerDepth,paths,route,nearest} from './habitat.js';
 import {stableSeed} from './state.js';
+import {shrimpSizeFactor} from './shrimp-scale.js';
 import {scheduleSwim,tickSwim,threaten,startSwim} from './swimming.js';
 export const GAME_SAVE_KEY='aquarium.three.creatures.v1';
 const clamp=x=>Math.max(0,Math.min(1,x));
@@ -39,13 +40,13 @@ export class CreatureWorld{
   for(const [i,original] of seed.creatures.entries()){
    const data=structuredClone(saved?saved.creatures.find(c=>c.CreatureId===original.CreatureId):original),position=vec(data.Position),rotation=new T.Quaternion(data.Rotation.x,data.Rotation.y,data.Rotation.z,data.Rotation.w).normalize();
    const phase=i<5?i:(stableSeed(data.CreatureId)%4001)/1000;
-   const a={data,position,rotation,index:i,phase:i*1.73,schedule:phase,age:0,hold:8+phase*3,decisionAt:this.elapsed+2+phase*.73,route:[],blocked:new Map(),blockedTime:0,peerTime:0,at:nearest(this.anchors,position),target:-1,progress:0,speed:0,residence:0,feedingOwner:null,feedingCentre:position.clone(),discoveryAt:this.elapsed,noticed:false,manual:null,swim:null,nextRecovery:0};
+   const a={data,position,rotation,index:i,phase:i*1.73,schedule:phase,age:0,hold:8+phase*3,decisionAt:this.elapsed+2+phase*.73,route:[],blocked:new Map(),blockedTime:0,peerTime:0,at:nearest(this.anchors,position),target:-1,progress:0,speed:0,residence:0,feedingOwner:null,feedingCentre:position.clone(),discoveryAt:this.elapsed,noticed:false,manual:null,swim:null,nextRecovery:0,scale:shrimpSizeFactor(data.CreatureId)};
    if(saved?.anchors)a.at=saved.anchors[saved.creatures.findIndex(c=>c.CreatureId===data.CreatureId)];
    if(saved&&!saved.anchors){const axis=up.clone().applyQuaternion(rotation),near=this.anchors.map((p,i)=>({p,i,d:p.position.distanceTo(position)})).filter(o=>o.d<.04&&o.p.edges.length&&o.p.normal.dot(axis)>.6).sort((a,b)=>a.d-b.d);if(near.length)a.at=near[0].i;}
    if(a.at<0)throw new Error('缺少可用栖息面');a.target=a.at;
    // Restore at a nearby supported pose; never change identity, needs, personality or memory.
-   let pose=null,chosen=a.at;const savedUp=up.clone().applyQuaternion(rotation),contact=habitat.cast(position.clone().addScaledVector(savedUp,.01),savedUp.clone().negate(),.035),wasSwimming=['RoutineSwim','EscapeSwim'].includes(data.ExecutionState);if(saved&&contact&&!wasSwimming&&habitat.depth(position,rotation)<=.0003&&this.agents.every(o=>peerDepth(position,rotation,o)<=.0008))pose={position:position.clone(),rotation:rotation.clone()};const candidates=this.anchors.map((p,j)=>({p,j,d:p.position.distanceTo(position)})).filter(o=>o.d<.06&&o.p.edges.length).sort((a,b)=>a.d-b.d);
-   for(const {p,j} of candidates){if(pose)break;const test=habitat.support(p.position,p.normal,rotation);if(test&&this.agents.every(o=>peerDepth(test.position,test.rotation,o)<=.0008)){pose=test;chosen=j;break;}}
+   let pose=null,chosen=a.at;const savedUp=up.clone().applyQuaternion(rotation),contact=habitat.cast(position.clone().addScaledVector(savedUp,.01),savedUp.clone().negate(),.035),wasSwimming=['RoutineSwim','EscapeSwim'].includes(data.ExecutionState);if(saved&&contact&&!wasSwimming&&habitat.depth(position,rotation,a.scale)<=.0003&&this.agents.every(o=>peerDepth(position,rotation,o,a.scale)<=.0008))pose={position:position.clone(),rotation:rotation.clone()};const candidates=this.anchors.map((p,j)=>({p,j,d:p.position.distanceTo(position)})).filter(o=>o.d<.06&&o.p.edges.length).sort((a,b)=>a.d-b.d);
+   for(const {p,j} of candidates){if(pose)break;const test=habitat.support(p.position,p.normal,rotation,a.scale);if(test&&this.agents.every(o=>peerDepth(test.position,test.rotation,o,a.scale)<=.0008)){pose=test;chosen=j;break;}}
    if(!pose)throw new Error(`虾 ${i+1} 没有合法恢复位置`);a.position.copy(pose.position);a.rotation.copy(pose.rotation);a.at=a.target=chosen;
    if(['Walk','Climb','RoutineSwim','EscapeSwim'].includes(data.ExecutionState)){data.ExecutionState='Rest';data.CurrentIntent='Rest';}
    this.agents.push(a);this.sync(a);
@@ -84,18 +85,18 @@ export class CreatureWorld{
 
  move(a,dt){const destination=a.route[0],p=this.anchors[a.at],q=this.anchors[destination],travel=q.position.clone().sub(p.position),distance=travel.length(),normal=p.normal.clone().lerp(q.normal,a.progress).normalize();const desired=face(travel,normal),angle=head(a.rotation).projectOnPlane(normal).angleTo(travel.clone().projectOnPlane(normal));
   if(angle>25*Math.PI/180){const rotation=a.rotation.clone().rotateTowards(desired,80*Math.PI/180*dt),pivot=new T.Vector3(.01,0,0).applyQuaternion(a.rotation).add(a.position),position=pivot.sub(new T.Vector3(.01,0,0).applyQuaternion(rotation));
-   if(!this.habitat.traverse(a.position,a.rotation,position,rotation)){this.reject(a,destination,dt);return;}
-   if(this.agents.some(o=>o!==a&&peerDepth(position,rotation,o)>.0003)){this.reject(a,destination,dt,true);return;}a.position.copy(position);a.rotation.copy(rotation);a.speed=0;a.blockedTime=0;return;
+   if(!this.habitat.traverse(a.position,a.rotation,position,rotation,a.scale)){this.reject(a,destination,dt);return;}
+   if(this.agents.some(o=>o!==a&&peerDepth(position,rotation,o,a.scale)>.0003)){this.reject(a,destination,dt,true);return;}a.position.copy(position);a.rotation.copy(rotation);a.speed=0;a.blockedTime=0;return;
   }
   const ramp=clamp(a.age/1.5),gait=Math.pow(clamp((Math.sin(this.elapsed*1.2+a.phase)+.65)/1.65),.3),speed=this.profile.WalkSpeed*a.data.Personality.Activity*ramp*ramp*(3-2*ramp)*gait;
   const projected=clamp(a.position.clone().sub(p.position).dot(travel)/(distance*distance));const t=Math.min(1,Math.max(a.progress,projected)+dt*speed/Math.max(.001,distance));
-  const point=p.position.clone().lerp(q.position,t),n=p.normal.clone().lerp(q.normal,t).normalize(),rotation=a.rotation.clone().rotateTowards(face(travel,n),80*Math.PI/180*dt),pose=this.habitat.support(point,n,rotation);
+  const point=p.position.clone().lerp(q.position,t),n=p.normal.clone().lerp(q.normal,t).normalize(),rotation=a.rotation.clone().rotateTowards(face(travel,n),80*Math.PI/180*dt),pose=this.habitat.support(point,n,rotation,a.scale);
   if(!pose){this.reject(a,destination,dt);return;}
   const rot=a.rotation.clone().rotateTowards(pose.rotation,80*Math.PI/180*dt);const delta=pose.position.clone().sub(a.position),tangent=travel.clone().projectOnPlane(n).normalize();const forward=delta.dot(tangent);if(forward<0)delta.addScaledVector(tangent,-forward);
   const contactUp=up.clone().applyQuaternion(a.rotation).add(up.clone().applyQuaternion(rot)).normalize(),forwardHead=head(a.rotation).add(head(rot)).projectOnPlane(contactUp).normalize();const back=delta.clone().projectOnPlane(contactUp).dot(forwardHead);if(back<0){delta.addScaledVector(forwardHead,-back);this.metrics.backwardCorrections++;}
   if(delta.length()>dt*.05)delta.setLength(dt*.05);const next=a.position.clone().add(delta);
-  if(!this.habitat.traverse(a.position,a.rotation,next,rot)){this.reject(a,destination,dt);return;}
-  if(this.agents.some(o=>o!==a&&peerDepth(next,rot,o)>.0003)){this.reject(a,destination,dt,true);return;}
+  if(!this.habitat.traverse(a.position,a.rotation,next,rot,a.scale)){this.reject(a,destination,dt);return;}
+  if(this.agents.some(o=>o!==a&&peerDepth(next,rot,o,a.scale)>.0003)){this.reject(a,destination,dt,true);return;}
   a.position.copy(next);a.rotation.copy(rot);a.progress=t;a.speed=speed;a.blockedTime=0;a.peerTime=0;const needs=a.data.Needs;needs.Fatigue=clamp(needs.Fatigue+dt*this.profile.WalkFatigue);needs.Monotony=Math.max(0,needs.Monotony-dt*this.profile.WalkMonotonyRelief);
   if(t>=1&&next.distanceTo(pose.position)<.002){a.at=destination;a.route.shift();a.progress=0;if(!a.route.length)this.arrive(a);}
  }

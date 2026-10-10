@@ -1,6 +1,7 @@
 import * as T from 'three';
 import {stableSeed} from './state.js';
 import {isFemale, MATURITY_DAYS, BERRY_DAYS} from './care.js';
+import {shrimpSizeFactor} from './shrimp-scale.js';
 
 const DAY = 86400;
 const RIG_Y = new T.Vector3(0, 1, 0), RIG_Z = new T.Vector3(0, 0, 1);
@@ -101,7 +102,7 @@ export function installShrimpLook({record, simSeconds}) {
       if (o.isBone && MOTION.test(o.name)) bones[o.name] = o;
       if (o.isBone && o.name === 'Abdomen_02') bones.eggHost = o;
     });
-    animal.look = {female, uniforms, bones, deltas:[], escapeAt:-1, wasEscape:false, phase:(seed % 628) / 100, size:(female ? 1.08 : 0.97) + (h1 - 0.5) * 0.04, eggs:null, basePigment:uniforms.aqPigment.value};
+    animal.look = {female, uniforms, bones, deltas:[], escapeAt:-1, wasEscape:false, phase:(seed % 628) / 100, size:shrimpSizeFactor(animal.id), eggs:null, basePigment:uniforms.aqPigment.value};
     return animal.look;
   }
 

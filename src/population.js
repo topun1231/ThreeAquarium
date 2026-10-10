@@ -3,6 +3,7 @@ import {clone} from 'three/addons/utils/SkeletonUtils.js';
 import {stableSeed} from './state.js';
 import {CreatureWorld} from './creatures.js';
 import {vec,face,up,peerDepth} from './habitat.js';
+import {shrimpSizeFactor} from './shrimp-scale.js';
 import {cloneCreatureMaterials, releaseCreatureMesh, stripEggMeshes} from './mesh-materials.js';
 export function populationRecords(base,count){
  if(!Number.isInteger(count)||count<1||count>50)throw new Error('虾数量应为 1–50');
@@ -13,7 +14,7 @@ export function resizePopulation(aq,world,count){
  aq.templates??=[...aq.animals];aq.populationBase??={tankId:world.seed.tankId,creatures:structuredClone(world.seed.creatures.slice(0,5))};
  const creatures=world.agents.slice(0,count).map(a=>structuredClone(a.data)),seed={...world.seed,creatures},saved=world.snapshot(),records=populationRecords(aq.populationBase,count);
  for(let i=creatures.length;i<count;i++){const c=records[i],h=stableSeed(c.CreatureId);c.Needs={Hunger:.35,Stress:0,Fatigue:.1,GroomNeed:.1,Monotony:0};c.CurrentIntent=c.ExecutionState='Rest';let pose=null;
-  const start=h%world.anchors.length;for(let j=0;j<world.anchors.length;j++){const at=(start+j)%world.anchors.length,a=world.anchors[at];if(!a.edges.length||a.kind!==0)continue;const q=face(new T.Vector3(-1,0,0),a.normal),candidate=world.habitat.support(a.position,a.normal,q);if(candidate&&creatures.every(o=>peerDepth(candidate.position,candidate.rotation,{position:vec(o.Position),rotation:new T.Quaternion(o.Rotation.x,o.Rotation.y,o.Rotation.z,o.Rotation.w)})<=.0008)){pose=candidate;break;}}
+  const start=h%world.anchors.length,scale=shrimpSizeFactor(c.CreatureId);for(let j=0;j<world.anchors.length;j++){const at=(start+j)%world.anchors.length,a=world.anchors[at];if(!a.edges.length||a.kind!==0)continue;const q=face(new T.Vector3(-1,0,0),a.normal),candidate=world.habitat.support(a.position,a.normal,q,scale);if(candidate&&creatures.every(o=>peerDepth(candidate.position,candidate.rotation,{position:vec(o.Position),rotation:new T.Quaternion(o.Rotation.x,o.Rotation.y,o.Rotation.z,o.Rotation.w),scale:shrimpSizeFactor(o.CreatureId)},scale)<=.0008)){pose=candidate;break;}}
   if(!pose)throw new Error(`当前造景找不到第 ${i+1} 只虾的安全位置`);c.Position={x:pose.position.x,y:pose.position.y,z:pose.position.z};c.Rotation={x:pose.rotation.x,y:pose.rotation.y,z:pose.rotation.y,w:pose.rotation.w};c.Rotation.z=pose.rotation.z;creatures.push(c);
  }
  seed.creatures=structuredClone(creatures);saved.creatures=creatures;delete saved.anchors;const nextWorld=new CreatureWorld(seed,world.habitat,saved),added=[];
