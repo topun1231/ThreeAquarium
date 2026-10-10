@@ -8,17 +8,19 @@ export function pearlRate({lightOn, litSeconds, quality = 1}) {
 }
 
 function pearlMaterial() {
-  return new T.ShaderMaterial({
+  return new T.MeshPhysicalMaterial({
     name:'Pearling',
-    transparent:true, depthWrite:false, uniforms:{aqAlpha:{value:0.7}},
-    vertexShader:'varying vec3 vN;varying vec3 vV;void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);vN=normalize(normalMatrix*normal);vV=normalize(-mv.xyz);gl_Position=projectionMatrix*mv;}',
-    fragmentShader:`varying vec3 vN;varying vec3 vV;uniform float aqAlpha;
-      void main(){
-        float fres=pow(1.0-abs(dot(normalize(vN),normalize(vV))),2.4);
-        vec3 rim=vec3(0.88,0.96,0.94);
-        vec3 core=vec3(0.28,0.42,0.40);
-        gl_FragColor=vec4(mix(core,rim,fres),aqAlpha*(0.28+0.72*fres));
-      }`,
+    color:0xb7ddd6,
+    roughness:0.08,
+    metalness:0,
+    transmission:0.72,
+    thickness:0.0014,
+    ior:1.33,
+    transparent:true,
+    opacity:0.88,
+    depthWrite:false,
+    attenuationColor:0x7fbfb4,
+    attenuationDistance:0.01,
   });
 }
 

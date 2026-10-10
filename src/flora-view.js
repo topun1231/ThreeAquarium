@@ -365,7 +365,7 @@ export class FloraView {
             const at = snap(guess).addScaledVector(normal, -0.0004);
             const drape = Math.max(0, 0.72 - normal.y);
             tmp.q.setFromUnitVectors(UP, normal.clone().lerp(new T.Vector3(0, -0.55, 0), 0.35 + drape * 0.7).normalize()).multiply(tmp.q2.setFromAxisAngle(UP, rand() * 6.28));
-            const size = (0.85 + rand() * 0.55) * record.Scale;
+            const size = (1.2 + rand() * 0.7) * record.Scale;
             add('moss', (record.Variant + i) % FLORA_VARIANTS, new T.Matrix4().compose(at, tmp.q.clone(), new T.Vector3(size, size * (0.85 + rand() * 0.5), size)), COLORS.moss.clone().offsetHSL(hueShift + (rand() - 0.5) * 0.012, (rand() - 0.5) * 0.06, (rand() - 0.5) * 0.05), [at.x, at.y, at.z, phase + i], {id:record.UniqueId, node:i});
           }
         } else {
