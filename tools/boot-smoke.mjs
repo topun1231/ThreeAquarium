@@ -68,17 +68,20 @@ async function main() {
     chrome = spawn(chromeBin, [
       '--headless=new', '--disable-gpu', '--use-gl=angle', '--use-angle=swiftshader',
       '--hide-scrollbars', '--window-size=1280,720',
-      `--remote-debugging-port=${CDP}`, `--user-data-dir=/tmp/aq-boot-smoke-${Date.now()}`,
+      `--remote-debugging-port=${CDP}`, '--remote-allow-origins=*',
+      `--user-data-dir=/tmp/aq-boot-smoke-${Date.now()}`,
       '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
       'about:blank',
     ], {stdio: ['ignore', 'pipe', 'pipe']});
     await waitPort(CDP, 15000);
-    const version = await fetch(`http://127.0.0.1:${CDP}/json/version`).then(r => r.json());
-    session = await cdpSession(version.webSocketDebuggerUrl);
+    await new Promise(r => setTimeout(r, 400));
+    const targets = await fetch(`http://127.0.0.1:${CDP}/json/list`).then(r => r.json());
+    const page = targets.find(t => t.type === 'page') || targets[0];
+    if (!page?.webSocketDebuggerUrl) throw new Error('no CDP page target');
+    session = await cdpSession(page.webSocketDebuggerUrl);
     await session.send('Runtime.enable');
     await session.send('Page.enable');
     await session.send('Page.navigate', {url: ORIGIN});
-    await session.send('Page.loadEventFired').catch(() => {});
     const deadline = Date.now() + 90000;
     let ready = false;
     while (Date.now() < deadline) {
