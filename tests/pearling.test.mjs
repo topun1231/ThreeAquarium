@@ -32,6 +32,8 @@ test('pearls cling to supplied leaf sites, then rise, and vanish in the dark', (
   for (let i = 0; i < 30; i++) pearls.update(0.4, 40 + i);
   const risen = pearls.group.children.filter(m => m.visible);
   assert.ok(risen.some(m => m.position.y > 0.09), 'detached pearls rise');
+  const beforePop = Math.max(...pearls.group.children.filter(m => m.visible).map(m => m.scale.x), 0);
+  assert.ok(beforePop < 0.01, `pearls stay drop-sized, not ${beforePop}`);
   light = false;
   pearls.update(0.2, 80);
   assert.equal(pearls.stats().alive, 0);

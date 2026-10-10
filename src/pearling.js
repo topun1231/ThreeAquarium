@@ -82,8 +82,9 @@ export function createPearling({root, sites, lightOn, waterLevel}) {
           mesh.position.x = u.site.x + Math.sin(now * 2.1 + u.phase) * 0.0016;
           mesh.position.z = u.site.z + Math.cos(now * 1.6 + u.phase) * 0.0012;
           mesh.scale.setScalar(grown);
-          if (mesh.position.y > level - 0.006 || rise > RISE) {
-            const fade = Math.max(0, 1 - (mesh.position.y - (level - 0.01)) / 0.012);
+          if (rise > RISE) { mesh.visible = false; u.life = -1; continue; }
+          if (mesh.position.y > level - 0.006) {
+            const fade = Math.max(0, Math.min(1, 1 - (mesh.position.y - (level - 0.01)) / 0.012));
             mesh.scale.setScalar(grown * fade);
             if (fade <= 0.05) { mesh.visible = false; u.life = -1; }
           }
