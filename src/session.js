@@ -1,4 +1,5 @@
 import {Substrate,sanitizeSubstrateKind} from './substrate.js';
+import {sanitizeColony} from './care.js';
 const finite=(v,a,b)=>Number.isFinite(v)&&v>=a&&v<=b;
 export function validateSession(value,runtime){
  if(!value||value.SaveVersion!==1||!value.Tank||!finite(value.SimulationSeconds,0,1e12)||!Number.isFinite(Date.parse(value.LastSaveUtc)))throw new Error('完整鱼缸存档无效');
@@ -11,7 +12,7 @@ export function validateSession(value,runtime){
  for(const r of tank.Hardscape)if(!runtime.entries.has(r.TypeId)||r.Burial!==undefined&&!finite(r.Burial,0,.03))throw new Error('木石规格无效');
  for(const key of ['PlantGrowthMultiplier','TankMaturityMultiplier','EvaporationMultiplier','AlgaeGrowthMultiplier','MaintenancePressureMultiplier'])if(!finite(s.Rates?.[key],0,1000))throw new Error('生态倍率无效');
  if(!tank.Environment||!['WaterLevel','Stability','Cleanliness','Algae'].every(k=>finite(tank.Environment[k],0,1))||typeof tank.Environment.LightOn!=='boolean')throw new Error('水环境记录无效');
- if(s.Colony!=null){if(typeof s.Colony!=='object'||!finite(s.Colony.progress,0,1))throw new Error('虾群繁育记录无效');s.Colony={progress:s.Colony.progress};}
+ if(s.Colony!=null)s.Colony=sanitizeColony(s.Colony);
  sanitizeSubstrateKind(tank.Substrate);
  new Substrate(runtime.settings,tank.Substrate);return s;
 }

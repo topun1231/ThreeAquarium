@@ -66,9 +66,9 @@ export class CreatureWorld{
    if(f>bestFood){bestFood=f;food=i;}if(cv>bestCover){bestCover=cv;cover=i;}if(ex>bestExplore){bestExplore=ex;explore=i;}
   }return {graph,food,cover,explore,knows};
  }
- decide(a){const o=this.observe(a),p=this.profile;a.scores=scores(a.data,{food:this.anchors[o.food].food,cover:this.anchors[o.cover].cover,knows:o.knows},p);const id=Object.keys(a.scores).sort((x,y)=>a.scores[y]-a.scores[x])[0];a.data.CurrentIntent=id;this.metrics.decisions++;
-  const target=id==='Graze'?o.food:id==='Hide'?o.cover:id==='Explore'?o.explore:a.at;a.route=route(o.graph.previous,a.at,target);a.target=target;a.progress=0;a.blockedTime=0;a.peerTime=0;
-  if(a.route.length)this.setState(a,'Walk',0);else this.setState(a,id==='Explore'?'Rest':id,id==='Graze'?p.GrazeHoldBase+p.GrazeHoldActivity/a.data.Personality.Activity:id==='Hide'?p.HideHoldBase+p.HideHoldBias*a.data.Personality.HideBias:id==='Groom'?p.GroomHold:p.RestHoldBase+p.RestHoldActivity/a.data.Personality.Activity);
+ decide(a){const o=this.observe(a),p=this.profile;a.scores=scores(a.data,{food:this.anchors[o.food].food,cover:this.anchors[o.cover].cover,knows:o.knows},p);let id=Object.keys(a.scores).sort((x,y)=>a.scores[y]-a.scores[x])[0];const maintenance=this.biofilm>=.45&&!o.knows&&id==='Rest'&&Math.floor(this.elapsed/25+a.phase)%2===0;if(maintenance)id='Graze';a.data.CurrentIntent=id;this.metrics.decisions++;
+  const target=maintenance?a.at:id==='Graze'?o.food:id==='Hide'?o.cover:id==='Explore'?o.explore:a.at;a.route=maintenance?[]:route(o.graph.previous,a.at,target);a.target=target;a.progress=0;a.blockedTime=0;a.peerTime=0;
+  if(a.route.length)this.setState(a,'Walk',0);else this.setState(a,id==='Explore'?'Rest':id,maintenance?6:id==='Graze'?p.GrazeHoldBase+p.GrazeHoldActivity/a.data.Personality.Activity:id==='Hide'?p.HideHoldBase+p.HideHoldBias*a.data.Personality.HideBias:id==='Groom'?p.GroomHold:p.RestHoldBase+p.RestHoldActivity/a.data.Personality.Activity);
   a.decisionAt=this.elapsed+p.DecisionInterval+a.schedule*p.DecisionStagger;
  }
  arrive(a){a.route=[];a.progress=0;a.speed=0;const id=a.data.CurrentIntent,p=this.profile;this.setState(a,id==='Explore'?'Rest':id,id==='Graze'?p.GrazeArrivalHold:id==='Hide'?p.HideArrivalHold:p.RestArrivalHold);this.metrics.arrivals++;}
@@ -106,7 +106,7 @@ export class CreatureWorld{
  threaten(point,radius=.32,intensity=1){return threaten(this,point,radius,intensity);}
  step(dt){if(!(dt>0&&dt<=.1))throw new Error('Simulation step must be <= 0.1 seconds');this.elapsed+=dt;const p=this.profile;const hours=dt/3600;for(const anchor of this.anchors){const target=[.32,.62,.85,.55][anchor.kind],amount=hours*.035;anchor.food=anchor.food<target?Math.min(target,anchor.food+amount):Math.max(target,anchor.food-amount);}for(const a of this.agents){a.data.Needs.Hunger=clamp(a.data.Needs.Hunger+hours*p.EcologicalHungerPerHour);a.data.Needs.Stress=Math.max(0,a.data.Needs.Stress-hours*p.EcologicalStressRecoveryPerHour);}
   if(this.pellet){this.pellet.age+=dt;const position=this.anchors[this.pellet.anchor].position;if(this.pellet.age>240||this.anchors.filter(a=>a.position.distanceTo(position)<.055).every(a=>a.food<.15))this.pellet=null;}
-  for(const a of this.agents){if(a.manual)continue;a.age+=dt;const n=a.data.Needs,b=a.data.Personality;n.Hunger=clamp(n.Hunger+dt*p.HungerRate*b.Activity);n.Stress=Math.max(0,n.Stress-dt*p.StressRecoveryRate);n.GroomNeed=clamp(n.GroomNeed+dt*p.GroomNeedRate);n.Monotony=clamp(n.Monotony+dt*p.MonotonyRate*b.Activity);
+  for(const a of this.agents){if(a.manual)continue;a.age+=dt;const n=a.data.Needs,b=a.data.Personality;n.Hunger=clamp(n.Hunger+dt*p.HungerRate*b.Activity);if(this.biofilm>0)n.Hunger=Math.max(p.MinimumHunger,n.Hunger-dt*0.006*this.biofilm);n.Stress=Math.max(0,n.Stress-dt*p.StressRecoveryRate);n.GroomNeed=clamp(n.GroomNeed+dt*p.GroomNeedRate);n.Monotony=clamp(n.Monotony+dt*p.MonotonyRate*b.Activity);
    scheduleSwim(this,a,stableSeed(a.data.CreatureId));if(tickSwim(this,a,dt))continue;
    if(this.knows(a)&&!a.noticed&&a.data.ExecutionState!=='Groom'&&(a.route.length?a.progress===0:a.age>8)){a.noticed=true;a.route=[];this.decide(a);}
    if(a.route.length)this.move(a,dt);else{

@@ -1,6 +1,4 @@
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
-// One real minute is about one ecological day, so new plants change while you watch.
-export const LIVE_GROWTH_SCALE=1440;
 export function curve(keys,t){
  if(!keys?.length)throw new Error('植物生长曲线缺失');
  if(t<=keys[0].time)return keys[0].value;
