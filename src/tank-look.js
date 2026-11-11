@@ -2,7 +2,7 @@ import * as T from 'three';
 
 const KEY = 'aquarium.three.quality.v1';
 const PRESETS = {
-  high: {fog:0.22, caustic:0.42, particles:36, shafts:true, pearling:1, floraDensity:1, floraShadows:true, shrimpDetail:'full'},
+  high: {fog:0.22, caustic:0.42, shafts:true, pearling:1, floraDensity:1, floraShadows:true, shrimpDetail:'full'},
 };
 
 export function qualityPreset() {
@@ -39,8 +39,8 @@ export function shapeTankLights(scene) {
   scene.add(key, key.target);
 }
 
-function installCaustics(materials, time, gain) {
-  const header = 'varying vec3 aqCausticPos;\nuniform float aqCTime;\nuniform float aqCGain;\n';
+function installCaustics(materials, time, gain, level) {
+  const header = 'varying vec3 aqCausticPos;\nuniform float aqCTime;\nuniform float aqCGain;\nuniform float aqCLevel;\n';
   for (const material of materials) {
     if (!material?.isMeshStandardMaterial || material.userData.caustic) continue;
     const previous = material.onBeforeCompile;
@@ -50,9 +50,10 @@ function installCaustics(materials, time, gain) {
       previous?.(shader, renderer);
       shader.uniforms.aqCTime = time;
       shader.uniforms.aqCGain = gain;
+      shader.uniforms.aqCLevel = level;
       shader.vertexShader = header + shader.vertexShader.replace('#include <project_vertex>', 'vec4 aqCP = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\naqCP = instanceMatrix * aqCP;\n#endif\naqCausticPos = (modelMatrix * aqCP).xyz;\n#include <project_vertex>');
       shader.fragmentShader = header + shader.fragmentShader.replace('#include <opaque_fragment>', `
-        float aqBelow = 1.0 - smoothstep(0.52, 0.585, aqCausticPos.y);
+        float aqBelow = 1.0 - smoothstep(aqCLevel - 0.06, aqCLevel + 0.005, aqCausticPos.y);
         float aqInside = step(abs(aqCausticPos.x), 0.6) * step(abs(aqCausticPos.z), 0.31) * step(-0.002, aqCausticPos.y);
         vec2 aqRel = vec2(aqCausticPos.x / 0.58, (aqCausticPos.z - 0.06) / 0.36);
         float aqPool = smoothstep(1.25, 0.15, length(aqRel));
@@ -66,26 +67,6 @@ function installCaustics(materials, time, gain) {
     material.customProgramCacheKey = () => `${previousKey ? previousKey() : material.uuid}:caustic2`;
     material.needsUpdate = true;
   }
-}
-
-function makeDrift(count) {
-  const positions = new Float32Array(count * 3);
-  const seeds = new Float32Array(count);
-  for (let i = 0; i < count; i++) {
-    positions[i * 3] = (Math.random() - 0.5) * 1.0;
-    positions[i * 3 + 1] = 0.04 + Math.random() * 0.5;
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 0.48;
-    seeds[i] = Math.random() * 10;
-  }
-  const geo = new T.BufferGeometry();
-  geo.setAttribute('position', new T.BufferAttribute(positions, 3));
-  const points = new T.Points(geo, new T.PointsMaterial({
-    color:'#d7ece4', size:0.0045, transparent:true, opacity:0.45, depthWrite:false, sizeAttenuation:true,
-  }));
-  points.frustumCulled = false;
-  points.name = 'tank-drift';
-  points.userData.seeds = seeds;
-  return points;
 }
 
 function makeShafts() {
@@ -133,11 +114,11 @@ export function installTankLook({scene, aq, water}) {
   }
   const time = {value:0};
   const gain = {value:0};
+  const waterHeight = {value:0.58};
   const receivers = aq.materials.filter(material => material?.isMeshStandardMaterial && !skip.has(material) && !/Glass|Water|Shrimp|shrimp/i.test(material.name || ''));
   let causticsOn = false;
-  const drift = makeDrift(36);
   const shafts = makeShafts();
-  scene.add(drift, shafts);
+  scene.add(shafts);
   let level = 'high';
   const listeners = [];
   function apply() {
@@ -145,9 +126,7 @@ export function installTankLook({scene, aq, water}) {
     const preset = PRESETS[level];
     if (water?.fog) water.fog.value = preset.fog;
     gain.value = preset.caustic;
-    if (preset.caustic > 0 && !causticsOn) { installCaustics(receivers, time, gain); causticsOn = true; }
-    drift.visible = preset.particles > 0;
-    drift.geometry.setDrawRange(0, preset.particles);
+    if (preset.caustic > 0 && !causticsOn) { installCaustics(receivers, time, gain, waterHeight); causticsOn = true; }
     shafts.visible = preset.shafts;
     for (const fn of listeners) fn(PRESETS[level], level);
   }
@@ -157,23 +136,15 @@ export function installTankLook({scene, aq, water}) {
     setQuality: apply,
     get preset(){ return PRESETS[level]; },
     onChange(fn){ listeners.push(fn); fn(PRESETS[level], level); },
-    update(now) {
+    update(now, {wet = true, lightOn = true, level:height = 0.58} = {}) {
       time.value = now;
       const preset = PRESETS[level];
+      waterHeight.value = height;
+      const active = wet && lightOn && height > 0.035;
+      gain.value = active ? preset.caustic : 0;
+      shafts.visible = active && preset.shafts;
+      shafts.scale.y = Math.max(0, height / 0.58);
       if (shafts.visible) shafts.userData.material.uniforms.aqTime.value = now;
-      if (drift.visible) {
-        const positions = drift.geometry.attributes.position;
-        const seeds = drift.userData.seeds;
-        const count = preset.particles;
-        for (let i = 0; i < count; i++) {
-          let y = positions.getY(i) + 0.004 + seeds[i] * 0.0004;
-          let x = positions.getX(i) + Math.sin(now * 0.2 + seeds[i]) * 0.00035;
-          if (y > 0.56) { y = 0.03; x = (Math.random() - 0.5) * 1.0; positions.setZ(i, (Math.random() - 0.5) * 0.48); }
-          positions.setX(i, Math.max(-0.54, Math.min(0.54, x)));
-          positions.setY(i, y);
-        }
-        positions.needsUpdate = true;
-      }
     },
   };
 }

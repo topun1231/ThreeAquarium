@@ -11,8 +11,9 @@ const assets = fileURLToPath(new URL('../public/assets/', import.meta.url));
 const catalog = JSON.parse(fs.readFileSync(path.join(assets, 'catalog.json')));
 const setup = JSON.parse(fs.readFileSync(path.join(assets, 'setup.json')));
 
-test('failed catalog fetch is not cached and a later call refetches', async () => {
+for (const failure of ['http', 'network', 'body']) test(`catalog ${failure} failure is identified and a later call refetches`, async () => {
   let geometryCalls = 0;
+  const cause = new TypeError('Failed to fetch');
   const original = globalThis.fetch;
   globalThis.fetch = async url => {
     const name = String(url).split('/').pop();
@@ -20,6 +21,8 @@ test('failed catalog fetch is not cached and a later call refetches', async () =
     if (name === 'setup.json') return {ok:true, json:async () => setup};
     if (name === 'catalog-geometry.bin') {
       geometryCalls++;
+      if (failure === 'network') throw cause;
+      if (failure === 'body') return {ok:true, arrayBuffer:async () => {throw cause;}};
       return {ok:false, url, status:500};
     }
     return {ok:false, url, status:404};
@@ -28,12 +31,19 @@ test('failed catalog fetch is not cached and a later call refetches', async () =
     const runtime = await TankRuntime.load({root:new T.Group(), nodes:[], materials:[]}, {plants:[]}, () => {});
     const first = runtime.ensureCatalog();
     const concurrent = runtime.ensureCatalog();
-    await assert.rejects(first, /资源读取失败/);
-    await assert.rejects(concurrent, /资源读取失败/);
+    const catalogFailure = error => {
+      assert.equal(error.code, 'CATALOG_LOAD_FAILED');
+      if (failure === 'http') assert.match(error.cause.message, /资源读取失败/);
+      else assert.equal(error.cause, cause);
+      assert.equal(error.message, error.cause.message);
+      return true;
+    };
+    await assert.rejects(first, catalogFailure);
+    await assert.rejects(concurrent, catalogFailure);
     assert.equal(geometryCalls, 1, 'in-flight callers share one fetch');
     assert.equal(runtime.catalog, null);
     assert.equal(runtime._catalogPending, null);
-    await assert.rejects(() => runtime.ensureCatalog(), /资源读取失败/);
+    await assert.rejects(() => runtime.ensureCatalog(), catalogFailure);
     assert.equal(geometryCalls, 2, 'retry after failure starts a new fetch');
     assert.equal(runtime._catalogPending, null);
   } finally {

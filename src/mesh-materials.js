@@ -14,15 +14,22 @@ export function assignMaterials(mesh, list) {
 }
 
 export function cloneCreatureMaterials(mesh, tint = 1) {
-  const next = materialsOf(mesh).map(material => {
+  const owned = [];
+  try {
+   const next = materialsOf(mesh).map(material => {
     if (/eye/i.test(material.name || '')) return material;
     const copy = material.clone();
+    owned.push(copy);
     if (copy.color?.multiplyScalar) copy.color.multiplyScalar(tint);
     copy.userData = {...(copy.userData || {}), populationOwned:true};
     return copy;
   });
   assignMaterials(mesh, next);
-  return next;
+   return next;
+  } catch (error) {
+    owned.forEach(material => material.dispose?.());
+    throw error;
+  }
 }
 
 export function stripEggMeshes(root) {

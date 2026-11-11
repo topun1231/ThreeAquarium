@@ -1,5 +1,9 @@
 # Three.js migration asset credits
 
+## Physics mesh preprocessing — 2026-10-21
+
+Meshoptimizer 1.3.0, copyright (c) 2016-2026 Arseny Kapoulkine, MIT license; full notice in [meshoptimizer-LICENSE.txt](meshoptimizer-LICENSE.txt). Used only to simplify temporary fixed-body collision meshes with locked boundaries and a 0.4 mm absolute simplifier error metric. Visible models, textures and source assets remain unchanged; the original full geometry still validates final placements. No new model assets were introduced.
+
 ## Authored Anubias integrated 2026-10-10
 
 - **Plants Anubias — Pala**: [original model](https://sketchfab.com/3d-models/plants-anubias-2ba1d06a191b437e848b81b2981a9e02), author **Pala**, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Retained three original plant shapes and photographic color/alpha textures. Modifications: FBX mesh-space orientation, uniform tank-size normalization, attachment origin, lossless WebP texture conversion, shared instanced meshes, nonmetallic wet-leaf material and subtle water motion. No fabricated normal map. Source BLEND/ZIP and FBX remain retained outside the web runtime package.
@@ -49,3 +53,7 @@ R1 为用户明确授权的单株自然化迭代。旧 PlantPipe001 作为 Befor
 - 场景、木石、灯光、水体：复制旧场景，保留引用和原署名。原始扫描资产未修改。
 
 固定 Seed 为 200103。叶片 Young / Mature / LargeOld 为制作尺寸分类，不是新增游戏数据、物种或生长阶段。视觉是否通过须由用户判断。
+
+2026-10-11 Selection thumbnails: six unchanged JPEG images copied from the approved Unity hardscape catalog, depicting the credited scans listed above; five original procedural substrate color textures reused as soil swatches. Stored in `thumbnails/`; no new model or license substitution.
+
+2026-10-11 Plant selection thumbnails: 19 JPEGs rendered locally from the existing runtime plant geometry and materials, including the Pala and Nullified models with their existing credits. `tools/plant-thumbnails.js` renders planting-stage specimens with a fixed seed, framing and thumbnail-only lighting; these pictures are shape references, not a shared size scale. No third-party photographs or new plant models were added; original asset licenses remain applicable.

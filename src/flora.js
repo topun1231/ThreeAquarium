@@ -114,7 +114,7 @@ export function checkFloraGround(list, {x, z, species, ignore, plants = []}) {
 export function checkFloraHost(list, {host, local, species, ignore, matrix}) {
   const spec = SPECIES[species];
   if (!spec?.host) throw new Error('这种水草种在底床上');
-  if (typeof host !== 'string' || !host) throw new Error('请先选中木石，再点它的表面附着');
+  if (typeof host !== 'string' || !host) throw new Error('请把鼠标移到木石表面，绿色时点击附着');
   if (!triple(local, HOST_LOCAL_LIMIT)) throw new Error('附着位置无效');
   const gap = floraGap(species);
   if ((list || []).some(r => {

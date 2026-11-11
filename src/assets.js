@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {attributeArray, stableSeed} from './state.js';
 import {crafted} from './crafted.js';
+import {highestDetailDraws} from './asset-lod.js';
 
 const ROOT='/assets/';
 const vector=a=>new THREE.Vector3(...a);
@@ -97,7 +98,7 @@ export async function loadAquarium(onProgress=()=>{},source=null) {
   const nodes=pack.nodes.map(n=>{const o=n.bone?new THREE.Bone():new THREE.Group();o.name=n.name;o.position.fromArray(n.p);o.quaternion.fromArray(n.q);o.scale.fromArray(n.s);return o;});
   pack.nodes.forEach((n,i)=>(n.parent<0?root:nodes[n.parent]).add(nodes[i]));root.updateMatrixWorld(true);
   const meshes=[];
-  pack.draws.forEach(d=>{
+  highestDetailDraws(pack).forEach(d=>{
     const geo=geometries[d.geo],mat=d.materials.map(i=>materials[i]);
     const mesh=d.bones?.length?new THREE.SkinnedMesh(geo,mat):new THREE.Mesh(geo,mat);
     mesh.name=nodes[d.node].name;mesh.castShadow=d.castShadow;mesh.receiveShadow=d.receiveShadow;

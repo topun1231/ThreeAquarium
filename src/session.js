@@ -1,6 +1,8 @@
 import {Substrate,sanitizeSubstrateKind} from './substrate.js';
 import {sanitizeColony} from './care.js';
 import {sanitizeFlora} from './flora.js';
+import {validateCrystalProgress} from './crystal-progress.js';
+import {validateCrystalRooms} from './crystal-rooms.js';
 const finite=(v,a,b)=>Number.isFinite(v)&&v>=a&&v<=b;
 export function validateSession(value,runtime){
  if(!value||value.SaveVersion!==1||!value.Tank||!finite(value.SimulationSeconds,0,1e12)||!Number.isFinite(Date.parse(value.LastSaveUtc)))throw new Error('完整鱼缸存档无效');
@@ -16,6 +18,9 @@ export function validateSession(value,runtime){
  if(s.Colony!=null)s.Colony=sanitizeColony(s.Colony);
  if(tank.Flora!=null){tank.Flora=sanitizeFlora(tank.Flora);for(const r of tank.Flora){if(ids.has(r.UniqueId))throw new Error('造景身份无效');ids.add(r.UniqueId);if(r.Host&&!tank.Hardscape.some(h=>h.UniqueId===r.Host))throw new Error('附生水草缺少附着木石');}runtime.validateFloraHosts?.(tank);}
  sanitizeSubstrateKind(tank.Substrate);
- new Substrate(runtime.settings,tank.Substrate);return s;
+ new Substrate(runtime.settings,tank.Substrate);
+ if(Object.hasOwn(s,'Breeding')){s.Breeding=validateCrystalProgress(s.Breeding);validateCrystalRooms(s,core=>validateSession(core,runtime));}
+ else if(Object.hasOwn(s,'BreedingRooms'))throw new Error('缺少养成个体档案');
+ return s;
 }
 

@@ -13,6 +13,8 @@ const MOTION = /^(AntennaLong_[LR]_0[123]|Antennule_[LR]|Pleopod_[LR]_0[1-5]|Fee
 const FRAGMENT_HEAD = `varying vec3 aqBody;
 uniform float aqSkinGain, aqPigment, aqSeed, aqShell;
 uniform vec3 aqTint;
+uniform float aqCrystal, aqCrystalPattern, aqCrystalCoverage, aqCrystalEdge;
+uniform vec3 aqCrystalColour;
 float aqHash3(vec3 p){return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453);}
 float aqNoise3(vec3 p){vec3 a=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(mix(aqHash3(a),aqHash3(a+vec3(1,0,0)),f.x),mix(aqHash3(a+vec3(0,1,0)),aqHash3(a+vec3(1,1,0)),f.x),f.y),mix(mix(aqHash3(a+vec3(0,0,1)),aqHash3(a+vec3(1,0,1)),f.x),mix(aqHash3(a+vec3(0,1,1)),aqHash3(a+vec3(1,1,1)),f.x),f.y),f.z);}
 `;
@@ -30,6 +32,27 @@ const PIGMENT = `#include <map_fragment>
   vec3 aqClear = mix(vec3(aqLum), aqBase, 0.45) * vec3(1.04, 0.92, 0.9) + vec3(0.035, 0.03, 0.028);
   vec3 aqDeep = aqBase * aqTint;
   diffuseColor.rgb = mix(aqBase, mix(aqClear, aqDeep, aqMask), aqSkinGain * aqRed);
+  if (aqCrystal > 0.5) {
+    // Rest-pose X runs from the head (0) to the tail (-0.025m) in the existing mesh.
+    // The varying is captured before skinning, so the markings bend with the animal.
+    float aqAlong = clamp(-aqBody.x / 0.025, 0.0, 1.0);
+    float aqEdge = mix(0.027, 0.0035, aqCrystalEdge);
+    float aqWobble = (aqNoise3(aqBody * 620.0 + aqSeed) - 0.5) * (1.0 - aqCrystalEdge) * 0.025;
+    float aqColourMask;
+    if (aqCrystalPattern < 0.5) {
+      float aqStripe = min(min(abs(aqAlong - 0.30), abs(aqAlong - 0.57)), abs(aqAlong - 0.81));
+      aqColourMask = smoothstep(0.052 - aqEdge, 0.052 + aqEdge, aqStripe + aqWobble);
+    } else if (aqCrystalPattern < 1.5) {
+      float aqSpot = length(vec2((aqAlong - 0.52) / 0.105, aqBody.y / 0.0019));
+      aqColourMask = max(1.0 - smoothstep(0.19 - aqEdge, 0.19 + aqEdge, aqAlong), 1.0 - smoothstep(0.85, 1.10, aqSpot + aqWobble));
+    } else {
+      aqColourMask = 1.0 - smoothstep(0.16 - aqEdge, 0.16 + aqEdge, aqAlong + aqWobble);
+    }
+    vec3 aqWhite = vec3(mix(0.58, 0.92, aqCrystalCoverage)) * vec3(1.0, 0.99, 0.96);
+    vec3 aqMarkings = mix(aqWhite, aqCrystalColour, aqColourMask);
+    aqMarkings *= 0.92 + 0.08 * aqNoise3(aqBody * 950.0 + aqSeed);
+    diffuseColor.rgb = mix(diffuseColor.rgb, aqMarkings, mix(0.28, 1.0, aqShell));
+  }
 }`;
 
 const LIGHT = `#include <lights_physical_pars_fragment>
@@ -38,7 +61,7 @@ void AQShrimpDirect(const in IncidentLight light, const in vec3 p, const in vec3
   float d = dot(n, light.direction);
   float wrap = max(0.0, (d + 0.5) / 1.5) - max(0.0, d);
   float back = pow(clamp(dot(v, -light.direction), 0.0, 1.0), 3.0) * 0.6 + max(0.0, -d) * 0.25;
-  reflectedLight.directDiffuse += material.diffuseColor * vec3(1.0, 0.55, 0.45) * light.color * (wrap * 0.35 + back * 0.5) * aqSkinGain;
+  reflectedLight.directDiffuse += material.diffuseColor * mix(vec3(1.0, 0.55, 0.45), vec3(0.88, 0.92, 1.0), aqCrystal) * light.color * (wrap * 0.35 + back * 0.5) * aqSkinGain;
   vec3 h = normalize(light.direction + v);
   reflectedLight.directSpecular += light.color * pow(max(dot(n, h), 0.0), 150.0) * (0.35 + 0.5 * aqShell) * aqSkinGain;
 }
@@ -55,7 +78,7 @@ function patchMaterial(material, uniforms) {
     shader.vertexShader = 'varying vec3 aqBody;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\naqBody = position;');
     shader.fragmentShader = FRAGMENT_HEAD + shader.fragmentShader.replace('#include <map_fragment>', PIGMENT).replace('#include <lights_physical_pars_fragment>', LIGHT);
   };
-  material.customProgramCacheKey = () => 'shrimp-look-v1';
+  material.customProgramCacheKey = () => 'shrimp-look-v2-crystal';
   material.needsUpdate = true;
 }
 
@@ -85,7 +108,9 @@ function boneAxes(animal, bone) {
   return value;
 }
 
-export function installShrimpLook({record, simSeconds}) {
+// crystal(id) optionally returns {individual, now, batch}; timestamps are real ms.
+// individual owns sex/colour/pattern/P/adultAt; batch is this mother's current brood.
+export function installShrimpLook({record, simSeconds, crystal = () => null}) {
   const skin = {value:1};
   const eggGeometry = eggCluster();
   let detail = 'full';
@@ -93,16 +118,18 @@ export function installShrimpLook({record, simSeconds}) {
 
   function prepare(animal) {
     if (animal.look) return animal.look;
-    const seed = stableSeed(String(animal.id)), female = isFemale(animal.id), h1 = ((seed >>> 3) % 1000) / 1000, h2 = ((seed >>> 13) % 1000) / 1000;
+    const individual = crystal(animal.id)?.individual;
+    const seed = stableSeed(String(animal.id)), female = individual ? individual.sex === 'female' : isFemale(animal.id), h1 = ((seed >>> 3) % 1000) / 1000, h2 = ((seed >>> 13) % 1000) / 1000;
     const tint = female ? new T.Vector3(1.1 + h1 * 0.06, 0.8 + h2 * 0.06, 0.78 + h2 * 0.05) : new T.Vector3(1.0 + h1 * 0.05, 0.92 + h2 * 0.06, 0.9 + h2 * 0.05);
-    const uniforms = {aqSkinGain:skin, aqPigment:{value:female ? 0.85 + h1 * 0.15 : 0.45 + h2 * 0.2}, aqSeed:{value:(seed % 997) * 0.37}, aqTint:{value:tint}};
+    const uniforms = {aqSkinGain:skin, aqPigment:{value:female ? 0.85 + h1 * 0.15 : 0.45 + h2 * 0.2}, aqSeed:{value:(seed % 997) * 0.37}, aqTint:{value:tint},
+      aqCrystal:{value:0}, aqCrystalPattern:{value:0}, aqCrystalCoverage:{value:0.5}, aqCrystalEdge:{value:0.5}, aqCrystalColour:{value:new T.Vector3(0.55, 0.018, 0.025)}};
     const bones = {};
     animal.rig.traverse(o => {
       if (o.isMesh) [].concat(o.material).forEach(m => patchMaterial(m, uniforms));
       if (o.isBone && MOTION.test(o.name)) bones[o.name] = o;
       if (o.isBone && o.name === 'Abdomen_02') bones.eggHost = o;
     });
-    animal.look = {female, uniforms, bones, deltas:[], escapeAt:-1, wasEscape:false, phase:(seed % 628) / 100, size:shrimpSizeFactor(animal.id), eggs:null, basePigment:uniforms.aqPigment.value};
+    animal.look = {female, uniforms, bones, deltas:[], escapeAt:-1, wasEscape:false, phase:(seed % 628) / 100, size:shrimpSizeFactor(animal.id, individual?.sex), eggs:null, basePigment:uniforms.aqPigment.value};
     return animal.look;
   }
 
@@ -129,17 +156,33 @@ export function installShrimpLook({record, simSeconds}) {
   }
 
   return {
+    dispose() { eggGeometry.dispose(); },
     get detail() { return detail; },
     setQuality(preset) { detail = preset?.shrimpDetail || 'full'; skin.value = detail === 'basic' ? 0 : 1; },
     /** Size, pigment by age, eggs. Runs every frame, also while paused. */
     sync(animals) {
       const sim = simSeconds();
       for (const animal of animals) {
-        const look = prepare(animal), r = record(animal.id);
+        const look = prepare(animal), r = record(animal.id), context = crystal(animal.id), individual = context?.individual;
+        look.female = individual ? individual.sex === 'female' : isFemale(animal.id);
+        look.size = shrimpSizeFactor(animal.id, individual?.sex);
         animal.sizeFactor = look.size;
         const age = r?.ageDays;
         look.uniforms.aqPigment.value = look.basePigment * (age == null || age >= MATURITY_DAYS ? 1 : 0.45 + 0.55 * Math.max(0, age) / MATURITY_DAYS);
-        if (look.female && r?.hatchAt != null) showEggs(animal, look, 1 - (r.hatchAt - sim) / (BERRY_DAYS * DAY));
+        const visibleCrystal = individual && ['red', 'black'].includes(individual.colour) && ['band', 'hinomaru', 'mosura'].includes(individual.pattern);
+        look.uniforms.aqCrystal.value = visibleCrystal ? 1 : 0;
+        if (visibleCrystal) {
+          const mature = context.now >= individual.adultAt;
+          // Juveniles reveal their broad direction, not hidden adult quality prematurely.
+          const quality = mature ? individual.P : [4, 3, 3], normal = i => T.MathUtils.clamp(((quality?.[i] ?? 5) - 1) / 8, 0, 1);
+          look.uniforms.aqCrystalPattern.value = {band:0, hinomaru:1, mosura:2}[individual.pattern];
+          look.uniforms.aqCrystalCoverage.value = normal(1); look.uniforms.aqCrystalEdge.value = normal(2);
+          if (individual.colour === 'black') look.uniforms.aqCrystalColour.value.setScalar(T.MathUtils.lerp(0.085, 0.012, normal(0)));
+          else look.uniforms.aqCrystalColour.value.set(T.MathUtils.lerp(0.32, 0.62, normal(0)), T.MathUtils.lerp(0.055, 0.009, normal(0)), T.MathUtils.lerp(0.055, 0.018, normal(0)));
+        }
+        const brood = context?.batch;
+        if (individual && look.female && brood?.motherId === individual.id && brood.status === 'formed' && context.now >= brood.formedAt && context.now < brood.hatchAt) showEggs(animal, look, (context.now - brood.formedAt) / (brood.hatchAt - brood.formedAt));
+        else if (!individual && look.female && r?.hatchAt != null) showEggs(animal, look, 1 - (r.hatchAt - sim) / (BERRY_DAYS * DAY));
         else if (look.eggs) look.eggs.visible = false;
       }
     },

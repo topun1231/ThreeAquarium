@@ -57,6 +57,23 @@ test('sixty real seconds does not finish a hatch', () => {
   assert.equal(result.colony.shrimp[id].hatchAt, 100000 + BERRY_DAYS * DAY);
 });
 
+test('stress never drops an existing berry but still prevents a new one', () => {
+  const id = idFor(true), shrimp = agent(id, {stress:1}), hatchAt = 28 * DAY;
+  const original = colonyOf([[id, record('小红', {hatchAt})]]);
+  const shocked = colonyTick(original, [shrimp], 1, 1, {richness:0.8});
+  assert.equal(shocked.colony.shrimp[id].hatchAt, hatchAt);
+  const restored = sanitizeColony(JSON.parse(JSON.stringify(shocked.colony)));
+  const waiting = colonyTick(restored, [shrimp], 27 * DAY, 27 * DAY + 1, {richness:0.8});
+  assert.equal(waiting.colony.shrimp[id].hatchAt, hatchAt);
+  const hatched = colonyTick(waiting.colony, [shrimp], DAY - 1, hatchAt, {richness:0.8});
+  assert.equal(hatched.hatches, 1);
+  assert.equal(hatched.colony.shrimp[id].hatchAt, null);
+  assert.equal(hatched.colony.journal.some(item => item.text.includes('没有保住')), false);
+  const next = colonyTick(hatched.colony, [shrimp], 30 * DAY, 58 * DAY, {richness:0.8});
+  assert.equal(next.colony.shrimp[id].hatchAt, null);
+  assert.equal(original.shrimp[id].hatchAt, hatchAt);
+});
+
 test('a full tank keeps the mother and drops the juvenile', () => {
   const agents = Array.from({length:50}, (_, index) => agent(`full-${index}`));
   const colony = emptyColony();

@@ -210,6 +210,17 @@ function tipOf(geo) {
   return new T.Vector3().fromBufferAttribute(p, best).toArray();
 }
 
+function normalAtTip(geo, tip) {
+  const p = geo.attributes.position, normal = geo.attributes.normal;
+  if (!normal) return [0, 1, 0];
+  let at = 0, best = Infinity;
+  for (let i = 0; i < p.count; i++) {
+    const d = (p.getX(i)-tip[0])**2 + (p.getY(i)-tip[1])**2 + (p.getZ(i)-tip[2])**2;
+    if (d < best) { at = i; best = d; }
+  }
+  return new T.Vector3().fromBufferAttribute(normal, at).normalize().toArray();
+}
+
 export function swayFloraPoint(point, stem, {amplitude, height}, time) {
   const h = T.MathUtils.clamp(Math.max(0, point.y - stem[1]) / height, 0, 1.6), gain = amplitude * h * h, phase = stem[3];
   point.x += (Math.sin(time * .62 + stem[0] * 9 + phase) + .45 * Math.sin(time * 1.37 + stem[2] * 13 + phase * 1.7)) * gain;
@@ -534,6 +545,7 @@ export class FloraView {
       const authoredTips = this.tipNodes?.[b.key];
       mesh.userData.tip = authoredTips?.length ? this.tips[b.key][0] : this.tips[b.key][b.variant];
       mesh.userData.tips = authoredTips?.length ? this.tips[b.key] : [this.tips[b.key][b.variant]];
+      mesh.userData.tipNormals = mesh.userData.tips.map(tip => normalAtTip(mesh.geometry, tip));
       mesh.userData.tipNodes = authoredTips || [];
       mesh.castShadow = this.shadows && (['rotalaLeaves', 'rotalaStem'].includes(b.key) || /^(pala|nullified)/.test(b.key));
       b.matrices.forEach((m, i) => { mesh.setMatrixAt(i, m); mesh.setColorAt(i, b.colors[i]); stems.setXYZW(i, ...b.stems[i]); leafAttr?.setX(i, b.leaves[i]); });
@@ -640,9 +652,11 @@ export class FloraView {
             const m = new T.Matrix4(); current.getMatrixAt(at, m);
             const localNow = current.userData.tips?.[tipIndex] || current.userData.tip;
             const point = new T.Vector3(...localNow).applyMatrix4(m), stem = current.geometry.attributes.aqStem;
-            return swayFloraPoint(point, Array.from(stem.array.subarray(at*4,at*4+4)), current.material.userData.sway, this.time.value);
+            swayFloraPoint(point, Array.from(stem.array.subarray(at*4,at*4+4)), current.material.userData.sway, this.time.value);
+            point.normal = new T.Vector3(...current.userData.tipNormals[tipIndex]).applyMatrix3(new T.Matrix3().getNormalMatrix(m)).normalize();
+            return point;
           };
-          sites.push({x:tip.x, y:tip.y, z:tip.z, vigor, resolve});
+          sites.push({id:`${key}:${owner.id}:${owner.node}:${t}`, x:tip.x, y:tip.y, z:tip.z, vigor, resolve});
         }
       }
     }

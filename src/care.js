@@ -98,12 +98,6 @@ export function colonyTick(colony, agents, seconds, simSeconds, {richness = 0, l
       const record = next.shrimp[agent.data.CreatureId];
       record.ageDays = Math.min(20000, record.ageDays + dt / DAY);
       if (record.hatchAt == null) continue;
-      if (agent.data.Needs.Stress > 0.75) {
-        record.hatchAt = null;
-        record.restUntil = cursor + 7 * DAY;
-        pushJournal(next, cursor, `${record.name}受惊，卵没有保住`);
-        continue;
-      }
       if (cursor >= record.hatchAt) {
         record.hatchAt = null;
         record.restUntil = cursor + REST_DAYS * DAY;
@@ -224,7 +218,21 @@ function colonyRecord(value, id) {
   if (value.hatchAt != null && (!Number.isFinite(value.hatchAt) || value.hatchAt < 0)) throw new Error('虾群繁育记录无效');
   const restUntil = value.restUntil || 0;
   if (!Number.isFinite(restUntil) || restUntil < 0) throw new Error('虾群繁育记录无效');
-  return {name, favorite:!!value.favorite, ageDays, hatchAt:value.hatchAt ?? null, restUntil};
+  if(value.sex!==undefined&&!['female','male'].includes(value.sex))throw new Error('虾性别记录无效');
+  return {name, favorite:!!value.favorite, ageDays, hatchAt:value.hatchAt ?? null, restUntil,...(value.sex?{sex:value.sex}:{})};
+}
+
+export function feedingSummary(world, colony) {
+  const pellet = world.pellet, center = pellet && world.anchors[pellet.anchor];
+  if (!center) return null;
+  const nearby = world.anchors.filter(anchor => anchor.position.distanceTo(center.position) < .11);
+  const food = nearby.reduce((sum, anchor) => sum + anchor.food, 0) / nearby.length;
+  const eaters = world.agents.filter(agent => agent.data.ExecutionState === 'Graze'
+    && !agent.manual && !agent.swim && !agent.route.length
+    && world.anchors[agent.at]?.food > 0
+    && world.anchors[agent.at].position.distanceTo(center.position) < .11
+  ).map(agent => ({id:agent.data.CreatureId, name:colony.shrimp[agent.data.CreatureId]?.name || '未命名的虾'}));
+  return {sinking:pellet.age < 2.5, food:food > .6 ? '较多' : food > .25 ? '有所减少' : '较少', eaters};
 }
 
 export function sanitizeColony(colony) {

@@ -1,4 +1,5 @@
 import * as T from 'three';
+import {createRoomCutaway} from './camera-motion.js';
 import {FOG_GLSL} from './water-fog.js';
 // Port of GameWaterSurface/GameWaterGlass: one opaque capture shared by both surfaces.
 export class AquariumWater {
@@ -20,10 +21,10 @@ export class AquariumWater {
    #include <tonemapping_fragment>
    #include <colorspace_fragment>
   }`,depthTest:true,depthWrite:true,depthFunc:T.AlwaysDepth})));
-  this.reflectionDirty=true;
+  this.cutaway=createRoomCutaway(aq.meshes);this.reflectionDirty=true;
  }
  render(time,wet=true){const r=this.renderer,c=this.camera,scene=this.scene,size=r.getDrawingBufferSize(new T.Vector2());if(!this.size.value.equals(size)){this.size.value.copy(size);this.target.setSize(size.x,size.y);}this.time.value=time;this.wet.value=wet?1:0;this.near.value=c.near;this.far.value=c.far;
   if(this.reflectionDirty){const background=scene.background;this.cube.update(r,scene);scene.background=background;this.reflectionDirty=false;}
-  const mapping=r.toneMapping,clear=r.autoClear,background=scene.background,autoReset=r.info.autoReset;r.info.autoReset=false;r.info.reset();c.layers.set(0);r.toneMapping=T.NoToneMapping;r.setRenderTarget(this.target);r.autoClear=true;r.render(scene,c);r.setRenderTarget(null);r.toneMapping=mapping;r.render(this.blitScene,this.blitCamera);r.autoClear=false;scene.background=null;c.layers.set(1);r.render(scene,c);c.layers.set(0);scene.background=background;r.autoClear=clear;r.info.autoReset=autoReset;
+  this.cutaway(c,()=>{const mapping=r.toneMapping,clear=r.autoClear,background=scene.background,autoReset=r.info.autoReset;r.info.autoReset=false;r.info.reset();c.layers.set(0);r.toneMapping=T.NoToneMapping;r.setRenderTarget(this.target);r.autoClear=true;r.render(scene,c);r.setRenderTarget(null);r.toneMapping=mapping;r.render(this.blitScene,this.blitCamera);r.autoClear=false;scene.background=null;c.layers.set(1);r.render(scene,c);c.layers.set(0);scene.background=background;r.autoClear=clear;r.info.autoReset=autoReset;});
  }
 }

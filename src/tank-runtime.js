@@ -14,9 +14,10 @@ const identity=new T.Matrix4(),mirror=new T.Matrix4().makeScale(1,1,-1);
 const disposeSurface=s=>{s.geo.dispose();if(s.ownedSource)s.source.dispose();};
 export const rotation=r=>new T.Quaternion().setFromEuler(new T.Euler(...['x','y','z'].map(k=>T.MathUtils.degToRad(r[k])),'YXZ'));
 const copyTransform=(o,r)=>{o.position.copy(vec(r.Position));o.quaternion.copy(rotation(r.Rotation));o.scale.copy(vec(r.Scale));};
+export const isMissingLegacyHardscape=(runtime,r)=>runtime.entries.get(r.TypeId)?.legacy&&!runtime.originals.has(r.UniqueId)&&['R04','R06'].includes(r.TypeId);
 export function needsCatalogMeshes(runtime, save) {
   for (const r of save.Tank.Hardscape || []) {
-    if (runtime.entries.get(r.TypeId)?.legacy && !runtime.originals.has(r.UniqueId) && ['R04', 'R06'].includes(r.TypeId)) continue;
+    if (isMissingLegacyHardscape(runtime,r)) continue;
     if (!runtime.originals.has(r.UniqueId)) return true;
   }
   for (const r of save.Tank.Plants || []) {
@@ -55,7 +56,10 @@ export class TankRuntime {
      const buffer=await fetch('/assets/catalog-geometry.bin').then(checked).then(r=>r.arrayBuffer());
      this.catalog=await loadAquarium(progress,{pack:this.data.assets,buffer});
      return this.catalog;
-    }catch(e){this._catalogPending=null;throw e;}
+    }catch(e){
+     this._catalogPending=null;
+     throw Object.assign(new Error(e?.message||'资源下载或解析失败',{cause:e}),{code:'CATALOG_LOAD_FAILED'});
+    }
    })();
   }
   return this._catalogPending;
@@ -63,7 +67,7 @@ export class TankRuntime {
  // Catalog leaf-sway clock. The sample tank uses scene meshes, so this is a no-op until a clone is loaded.
  update(dt,now){this.catalog?.update?.(dt,now);}
  needsCatalogFor(save){return needsCatalogFor(this,save);}
- async readyForSession(save){if(this.needsCatalogFor(save))await this.ensureCatalog();return validateSession(save,this);}
+ async readyForSession(save){if(this.needsCatalogFor(save)||(save.BreedingRooms?.rooms||[]).some(r=>this.needsCatalogFor(r.session)))await this.ensureCatalog();return validateSession(save,this);}
  cloneOriginal(record){const original=this.originals.get(record.UniqueId);if(!original)return null;const node=original.clone(true);node.visible=true;const world=mirror.clone().multiply(original.matrixWorld);world.decompose(node.position,node.quaternion,node.scale);
   const before=this.originalRecords.get(record.UniqueId),delta=new T.Matrix4().compose(vec(record.Position),rotation(record.Rotation),vec(record.Scale)).multiply(new T.Matrix4().compose(vec(before.Position),rotation(before.Rotation),vec(before.Scale)).invert());node.applyMatrix4(delta);return node;
  }
@@ -87,13 +91,25 @@ export class TankRuntime {
  validateFloraHosts(tank){const hosts=new Map();for(const r of tank.Flora||[]){if(!r.Host)continue;if(!hosts.has(r.Host)){const host=this.hardscape(tank.Hardscape.find(h=>h.UniqueId===r.Host));host.updateMatrixWorld(true);hosts.set(r.Host,{matrix:host.matrixWorld,box:new T.Box3().setFromObject(host)});}const {matrix,box}=hosts.get(r.Host),p=new T.Vector3(...r.Local).applyMatrix4(matrix);if(Math.abs(p.x)>.65||Math.abs(p.z)>.35||p.y<-.1||p.y>.65||box.distanceToPoint(p)>.03)throw new Error('附生水草的附着位置超出木石');}}
  async prepare(save,reuse=null,{navigation=true,mutableSolids=false}={}){if(needsCatalogMeshes(this,save))await this.ensureCatalog();const soil=new Substrate(this.settings,save.Tank.Substrate),group=new T.Group(),entities=new Map(),sameSoil=reuse&&JSON.stringify(save.Tank.Substrate)===JSON.stringify(reuse.save.Tank.Substrate),soilView=new SoilView(this.aq,soil,sameSoil?reuse.soilView:null,this.sourceSoil);group.add(soilView.root);
   let habitat,floraItems=[];
-  try{for(const record of save.Tank.Hardscape){if(this.entries.get(record.TypeId)?.legacy&&!this.originals.has(record.UniqueId)&&['R04','R06'].includes(record.TypeId))continue;const node=this.hardscape(record);entities.set(record.UniqueId,node);group.add(node);}
+  try{for(const record of save.Tank.Hardscape){if(isMissingLegacyHardscape(this,record))continue;const node=this.hardscape(record);entities.set(record.UniqueId,node);group.add(node);}
    for(const record of save.Tank.Plants){const node=this.plant(record,soil);entities.set(record.UniqueId,node);group.add(node);}group.updateMatrixWorld(true);
    const surfaces=[{node:'ground',owner:'Aquarium living substrate',kind:0,solid:false,geometry:soilView.ground.geometry,transform:identity.clone()}];
    for(const [id,node]of entities)node.traverse(o=>{if(o.isMesh&&o.geometry.index?.count)surfaces.push({node:id+'/'+o.name+'/'+surfaces.filter(s=>s.owner===node.name).length,owner:node.name,kind:node.userData.kind,solid:node.userData.kind!==3,rebuild:mutableSolids&&node.userData.kind!==3,geometry:o.geometry,material:o.material[0].userData.source,transform:o.matrixWorld.clone()});});
    habitat=await createHabitat(null,null,()=>{},reuse?.habitat,surfaces);
    const baseHabitat=habitat;
-   if(save.Tank.Flora?.length){floraItems=this.flora?this.flora.collisionItems(save.Tank.Flora,{soil,entities,habitat,unity:true}):floraCollisionItems(save.Tank.Flora,{soil,habitat,hostMatrix:id=>entities.get(id)?.matrixWorld});surfaces.push(...floraItems);habitat=await createHabitat(null,null,()=>{},habitat,surfaces);}let anchors=[];
+   if(save.Tank.Flora?.length){
+    const retained=new Map(),before=new Map((reuse?.save.Tank.Flora||[]).map(r=>[r.UniqueId,r]));
+    // Reuse only dry ground plants; attached and underwater plants still rebuild their contact geometry.
+    if(sameSoil&&!navigation&&!save.Tank.Setup.Filled&&!reuse.save.Tank.Setup.Filled){
+     const oldSurfaces=new Map(reuse.habitat.surfaces.filter(s=>s.flora).map(s=>[s.node,s]));
+     for(const r of save.Tank.Flora){const s=oldSurfaces.get('flora/'+r.UniqueId);if(!r.Host&&s&&s.flowTime===undefined&&JSON.stringify(r)===JSON.stringify(before.get(r.UniqueId)))retained.set(r.UniqueId,s);}
+    }
+    const changed=save.Tank.Flora.filter(r=>!retained.has(r.UniqueId));
+    floraItems=this.flora?this.flora.collisionItems(changed,{soil,entities,habitat,unity:true}):floraCollisionItems(changed,{soil,habitat,hostMatrix:id=>entities.get(id)?.matrixWorld});
+    const generated=new Map(floraItems.map(s=>[s.node,s]));
+    for(const r of save.Tank.Flora){const s=retained.get(r.UniqueId),item=s?{...s,geometry:s.source}:generated.get('flora/'+r.UniqueId);if(item)surfaces.push(item);}
+    habitat=await createHabitat(null,null,()=>{},{surfaces:[...habitat.surfaces,...retained.values()]},surfaces);
+   }let anchors=[];
    if(navigation){const prior=reuse?.anchors||[],push=h=>{if(h?.surface.flora&&h.normal.y<0)h.normal.negate();if(!h||h.normal.y<-.25||Math.abs(h.point.x)>.575||Math.abs(h.point.z)>.277||h.point.y>.56)return;const key=h.surface.owner+':'+[h.point.x,h.point.y,h.point.z].map(v=>Math.round(v/.012)).join(':');if(occupied.has(key))return;occupied.add(key);const old=prior.find(a=>a.owner===h.surface.owner&&vec(a.position).distanceTo(h.point)<.012);anchors.push({position:h.point.clone(),normal:h.normal.clone(),kind:h.surface.kind,owner:h.surface.owner,flora:!!h.surface.flora,food:old?.food??(h.surface.kind===3?.60:.4),edges:[]});},occupied=new Set();
     for(let x=-.565;x<=.566;x+=.032)for(let z=-.266;z<=.267;z+=.032)push(habitat.cast(new T.Vector3(x,.59,z),new T.Vector3(0,-1,0),.6));
     // Leaves can hide the floor/host from the coarse top grid; retain an entry point at each root.

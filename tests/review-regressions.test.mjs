@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import * as T from 'three';
 import {createHabitat, reconnectGraph} from '../src/habitat.js';
 import {CreatureWorld} from '../src/creatures.js';
-import {resizePopulation} from '../src/population.js';
+import {resizePopulation,reconcilePopulation,validateStock,populationRecords} from '../src/population.js';
 import {applyAgentScales, shrimpBodyScale} from '../src/shrimp-scale.js';
 import {emptyColony, syncRoster, sanitizeColony} from '../src/care.js';
 import {FloraView} from '../src/flora-view.js';
@@ -16,6 +16,73 @@ const read = name => JSON.parse(fs.readFileSync(new URL('../public/assets/'+name
 const seed = read('behavior.json'), pack = read('scene.json');
 const raw = fs.readFileSync(new URL('../public/assets/geometry.bin', import.meta.url));
 const habitat = await createHabitat(pack, raw.buffer.slice(raw.byteOffset, raw.byteOffset+raw.byteLength));
+
+test('identity reconciliation preserves surviving rigs, replaces equal counts and rolls back candidates', () => {
+  const world = new CreatureWorld(seed, habitat), root = new T.Group();
+  const animals = world.agents.map(agent => {
+    const rig = new T.Group(), mesh = new T.Mesh(new T.BoxGeometry(.01,.01,.01), [new T.MeshStandardMaterial()]);
+    mesh.userData.creatureId = agent.data.CreatureId; rig.add(mesh); root.add(rig);
+    return {id:agent.data.CreatureId,rig,baseScale:1,mixer:new T.AnimationMixer(rig),actions:new Map()};
+  });
+  const original = [...animals], aq = {root,animals,meshes:animals.map(a=>a.rig.children[0])};
+  const changedSeed = structuredClone(seed);
+  changedSeed.creatures[2].CreatureId = 'new-permanent-id';
+  const changed = new CreatureWorld(changedSeed, habitat);
+  const cancelled = reconcilePopulation(aq,changed);
+  assert.deepEqual(aq.animals,original,'preparing cannot mutate live identities');
+  cancelled.dispose(); cancelled.dispose();
+  assert.deepEqual(aq.animals,original);
+  assert.equal(aq.meshes.length,5);
+  const transaction = reconcilePopulation(aq,changed); transaction.commit(); transaction.commit();
+  assert.deepEqual(aq.animals.map(a=>a.id),changed.agents.map(a=>a.data.CreatureId));
+  for(const i of [0,1,3,4]) assert.equal(aq.animals[i],original[i]);
+  assert.equal(original[2].rig.parent,null);
+  assert.equal(aq.animals[2].rig.children[0].userData.creatureId,'new-permanent-id');
+  assert.equal(aq.meshes.length,5);
+  transaction.dispose(); assert.equal(aq.animals[2].rig.parent,root,'disposing committed state is harmless');
+  const reversed = new CreatureWorld({...changedSeed,creatures:[...changedSeed.creatures].reverse()},habitat);
+  const kept = new Map(aq.animals.map(a=>[a.id,a]));
+  reconcilePopulation(aq,reversed).commit();
+  assert.deepEqual(aq.animals.map(a=>a.id),reversed.agents.map(a=>a.data.CreatureId));
+  assert.ok(aq.animals.every(a=>kept.get(a.id)===a));
+  const empty = new CreatureWorld({...changedSeed,creatures:[]},habitat);
+  reconcilePopulation(aq,empty).commit();
+  assert.equal(aq.animals.length,0); assert.equal(aq.meshes.length,0);
+  assert.deepEqual(populationRecords(changedSeed,0),[]);
+  assert.doesNotThrow(()=>validateStock({tankId:seed.tankId,creatures:[]}));
+  reconcilePopulation(aq,changed).commit();
+  assert.equal(aq.animals.length,5); assert.equal(aq.meshes.length,5);
+  assert.deepEqual(aq.animals.map(a=>a.id),changed.agents.map(a=>a.data.CreatureId));
+});
+
+test('cloned shrimp exclude template stars and keep original scale before the first render', () => {
+  const world=new CreatureWorld(seed,habitat), rig=new T.Group(),star=new T.Sprite(new T.SpriteMaterial());
+  rig.scale.setScalar(2);rig.add(star);
+  const template={id:world.agents[0].data.CreatureId,rig,star,actions:new Map()};
+  const aq={root:new T.Group(),animals:[],templates:[template],meshes:[]};
+  const transaction=reconcilePopulation(aq,world);transaction.commit();
+  for(let i=0;i<aq.animals.length;i++){
+    assert.equal(aq.animals[i].baseScale,2);
+    assert.equal(aq.animals[i].rig.scale.x,2*world.agents[i].scale);
+    assert.equal(aq.animals[i].rig.children.filter(child=>child.isSprite).length,0);
+  }
+  assert.equal(star.parent,rig,'source favorite marker remains intact');
+});
+
+test('candidate material failure cleans private clones without disposing shared source materials', () => {
+  const world=new CreatureWorld(seed,habitat),rig=new T.Group(),material=new T.MeshStandardMaterial();
+  material.userData.populationOwned=true;
+  const broken=new T.MeshStandardMaterial();let originalsDisposed=0,copiesDisposed=0;
+  for(const source of [material,broken])source.addEventListener('dispose',()=>originalsDisposed++);
+  const clone=material.clone.bind(material);
+  material.clone=()=>{const copy=clone();copy.addEventListener('dispose',()=>copiesDisposed++);return copy;};
+  broken.clone=()=>{throw new Error('injected material failure');};
+  rig.add(new T.Mesh(new T.BoxGeometry(),material),new T.Mesh(new T.BoxGeometry(),broken));
+  const aq={root:new T.Group(),animals:[],templates:[{rig,actions:new Map(),baseScale:1}],meshes:[]};
+  assert.throws(()=>reconcilePopulation(aq,world),/injected material failure/);
+  assert.equal(originalsDisposed,0);assert.equal(copiesDisposed,1);
+  assert.equal(aq.animals.length,0);assert.equal(aq.meshes.length,0);
+});
 
 test('resize clones the original rig scale and removing unregistered eggs preserves scenery', () => {
   const world = new CreatureWorld(seed, habitat), colony = syncRoster(emptyColony(), world.agents);
@@ -101,10 +168,10 @@ test('a shrimp can reach the new stem from substrate across a ground-to-stem tra
 
 test('clinging pearls follow live leaf sites, detach independently, and vanish when the leaf is deleted', () => {
   let point=new T.Vector3(.1,.08,.02),light=true;
-  const pearls=createPearling({root:new T.Group(),sites:()=>[{...point,resolve:()=>point}],lightOn:()=>light});
-  pearls.update(.1,1);const first=pearls.group.children.find(m=>m.visible);assert.ok(first);
+  const pearls=createPearling({root:new T.Group(),sites:()=>[{id:'leaf',...point,resolve:()=>point}],lightOn:()=>light});
+  for(let i=0;i<310;i++)pearls.update(.1,i/10);const first=pearls.group.children.find(m=>m.visible);assert.ok(first);
   point=new T.Vector3(.2,.1,.04);pearls.update(.1,1.1);assert.deepEqual(first.position.toArray(),point.toArray());
   first.userData.cling=.15;pearls.update(.1,1.2);const origin=first.userData.origin.clone();point=new T.Vector3(.5,.4,.2);pearls.update(.1,1.3);assert.ok(first.position.x<.3);assert.ok(first.position.y>origin.y);
-  first.userData.life=0;first.userData.cling=5;point=null;pearls.update(.1,1.4);assert.equal(first.visible,false);
+  first.userData.life=0;first.userData.cling=5;delete first.userData.origin;point=null;pearls.update(.1,1.4);assert.equal(first.visible,false);
   light=false;pearls.update(.1,1.5);assert.equal(pearls.stats().alive,0);
 });

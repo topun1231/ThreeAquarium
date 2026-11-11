@@ -1,5 +1,5 @@
 import * as T from 'three';
-import {up,face,head,peerDepth,paths,nearest} from './habitat.js';
+import {up,face,peerDepth,paths,nearest} from './habitat.js';
 const clamp=T.MathUtils.clamp;
 const hash=(seed,value)=>{let h=(seed^Math.imul(value,747796405))>>>0;h^=h>>>16;h=Math.imul(h,2246822519)>>>0;h^=h>>>13;return (h&65535)/65535;};
 const bezier=(s,t)=>s.start.clone().multiplyScalar((1-t)**2).addScaledVector(s.control,2*(1-t)*t).addScaledVector(s.landing.position,t*t);
@@ -31,11 +31,11 @@ function landBelow(world,a,dt){
 }
 export function tickSwim(world,a,dt){const s=a.swim;if(!s?.kind)return false;s.clock+=dt;
  const direction=s.returning?face(s.start.clone().sub(s.landing.position),up):s.direction;
- if(s.turning){const q=a.rotation.clone().rotateTowards(direction,115*Math.PI/180*dt);if(world.habitat.traverse(a.position,a.rotation,a.position,q,a.scale)&&world.agents.every(o=>o===a||peerDepth(a.position,q,o,a.scale)<=.0003))a.rotation.copy(q);else s.wait+=dt;if(head(a.rotation).angleTo(head(direction))<25*Math.PI/180){s.turning=false;s.wait=0;}if(s.wait>.4){if(s.returning)landBelow(world,a,dt);else {a.swim=null;world.arrive(a);}}world.sync(a);return true;}
+ if(s.turning){const q=a.rotation.clone().rotateTowards(direction,115*Math.PI/180*dt);if(world.habitat.traverse(a.position,a.rotation,a.position,q,a.scale)&&world.agents.every(o=>o===a||peerDepth(a.position,q,o,a.scale)<=.0003))a.rotation.copy(q);else s.wait+=dt;if(a.rotation.angleTo(direction)<25*Math.PI/180){s.turning=false;s.wait=0;}if(s.wait>.4){if(s.returning)landBelow(world,a,dt);else {a.swim=null;world.arrive(a);}}world.sync(a);return true;}
  const escape=s.kind==='EscapeSwim',pulse=escape?1:1+.075*Math.sin(2*Math.PI*(3/1.6)*s.clock-1.1),advance=dt/s.duration*pulse*(s.t>.8&&!escape?.6:1),t=clamp(s.t+(s.returning?-advance:advance),0,1),u=escape?1-(1-t)**2:t,next=bezier(s,u),target=direction.clone().slerp(s.returning?s.rotation:s.landing.rotation,s.returning?clamp((.2-t)/.2,0,1):clamp((t-.8)/.2,0,1)),q=a.rotation.clone().rotateTowards(target,(escape?180:115)*Math.PI/180*dt);
  if(!world.habitat.traverse(a.position,a.rotation,next,q,a.scale)||world.agents.some(o=>o!==a&&peerDepth(next,q,o,a.scale)>.0003)){s.wait+=dt;if(!escape&&!s.returning&&s.wait>.4){s.returning=true;s.turning=true;s.wait=0;}if(escape||s.returning&&s.wait>1.5)landBelow(world,a,dt);world.sync(a);return true;}
  s.wait=0;s.t=t;a.position.copy(next);a.rotation.copy(q);a.speed=advance*s.start.distanceTo(s.landing.position)/dt;
- if((!s.returning&&t>=1)||(s.returning&&t<=0)){a.at=s.returning?s.origin:s.target;a.swim=null;world.arrive(a);if(escape){a.hold=0;a.data.CurrentIntent='Hide';a.decisionAt=world.elapsed;}}world.sync(a);return true;
+ if(((!s.returning&&t>=1)||(s.returning&&t<=0))&&q.angleTo(target)<.01){a.at=s.returning?s.origin:s.target;a.swim=null;world.arrive(a);if(escape){a.hold=0;a.data.CurrentIntent='Hide';a.decisionAt=world.elapsed;}}world.sync(a);return true;
 }
 export function threaten(world,point,radius=.32,intensity=1){let affected=0;for(const a of world.agents){const d=a.position.distanceTo(point);if(d>radius||a.manual)continue;const stress=clamp((1-d/world.profile.ThreatFalloffRadius)*intensity/a.data.Personality.Boldness,0,1);a.data.Needs.Stress=clamp(a.data.Needs.Stress+stress,0,1);a.data.Memory.RecentThreatTime=world.elapsed;affected++;
   const candidates=world.anchors.map((p,i)=>({p,i,d:p.position.distanceTo(a.position)})).filter(o=>o.d>world.profile.EscapeMinimum&&o.d<world.profile.EscapeMaximum&&o.p.edges.length).sort((a,b)=>(b.p.position.distanceTo(point)+b.p.cover*.05)-(a.p.position.distanceTo(point)+a.p.cover*.05));

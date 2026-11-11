@@ -10,7 +10,11 @@ const proxyX=bodyProxy.map(p=>p.x),proxyY=bodyProxy.map(p=>p.y),radii=bodyProxy.
 const peerRadius=Math.max(...bodyProxy.map(p=>Math.hypot(p.x,p.y)+p.r)),peerCache=new WeakMap();
 export const bodyScale=s=>Number.isFinite(s)&&s>0?s:1;
 function cachedBodyPoints(p,q,scale){const s=bodyScale(scale),signature=[p.x,p.y,p.z,q.x,q.y,q.z,q.w,s],cached=peerCache.get(p);if(cached&&signature.every((v,i)=>v===cached.signature[i]))return cached.points;const points=bodyPoints(p,q,s);peerCache.set(p,{signature,points});return points;}
-export function face(travel,normal){const x=travel.clone().projectOnPlane(normal).normalize().negate(),z=x.clone().cross(normal).normalize(),y=z.clone().cross(x);return new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(x,y,z));}
+export function face(travel,normal){const x=travel.clone().projectOnPlane(normal);
+ // Vertical travel has no tangent heading; keep a valid frame on the support plane.
+ if(x.lengthSq()<1e-12)x.set(1,0,0).projectOnPlane(normal);
+ if(x.lengthSq()<1e-12)x.set(0,0,1).projectOnPlane(normal);
+ x.normalize().negate();const z=x.clone().cross(normal).normalize(),y=z.clone().cross(x);return new T.Quaternion().setFromRotationMatrix(new T.Matrix4().makeBasis(x,y,z)).normalize();}
 export const head=q=>new T.Vector3(-1,0,0).applyQuaternion(q);
 export function bodyPoints(p,q,scale=1){const s=bodyScale(scale);return proxyX.map((x,i)=>new T.Vector3(x*s,proxyY[i]*s,0).applyQuaternion(q).add(p));}
 export function bodyRadii(scale=1){const s=bodyScale(scale);return radii.map(r=>r*s);}
@@ -36,11 +40,20 @@ export async function createHabitat(pack,buffer,onProgress=()=>{},reuse=null,dyn
   geo.computeBoundingBox();surfaces.push({node:d.node,transform,owner:owner||'Aquarium living substrate',kind:ground?0:plant?3:owner.startsWith('W')?2:1,solid:!plant&&!ground,geo,bvh:new MeshBVH(geo),box:geo.boundingBox});
  }
  if(dynamic)for(const item of dynamic){
-  const cached=!item.rebuild&&reuse?.surfaces.find(s=>s.node===item.node&&s.source===item.geometry&&s.transform.equals(item.transform));
+  const previous=reuse?.surfaces.find(s=>s.node===item.node&&s.source===item.geometry);
+  const cached=!item.rebuild&&previous?.transform.equals(item.transform)&&previous;
   if(cached){surfaces.push(cached);continue;}
-  const geo=new T.BufferGeometry();geo.setAttribute('position',item.geometry.attributes.position.clone());geo.setIndex(item.geometry.index.clone());geo.applyMatrix4(item.transform);
-  if(item.transform.determinant()<0){const idx=geo.index.array;for(let i=0;i<idx.length;i+=3)[idx[i+1],idx[i+2]]=[idx[i+2],idx[i+1]];}
-  geo.computeBoundingBox();surfaces.push({...item,source:item.geometry,geo,bvh:new MeshBVH(geo),box:geo.boundingBox});
+  const geo=new T.BufferGeometry();geo.setAttribute('position',item.geometry.attributes.position.clone());geo.applyMatrix4(item.transform);geo.computeBoundingBox();
+  let bvh;
+  if(item.solid&&previous?.solid&&previous.transform.determinant()*item.transform.determinant()>0){
+   // Copy the tree and its triangle order before refitting; an aborted edit must leave the live collider untouched.
+   bvh=MeshBVH.deserialize(MeshBVH.serialize(previous.bvh,{cloneBuffers:true}),geo);bvh.refit();
+  }else{
+   geo.setIndex(item.geometry.index.clone());
+   if(item.transform.determinant()<0){const idx=geo.index.array;for(let i=0;i<idx.length;i+=3)[idx[i+1],idx[i+2]]=[idx[i+2],idx[i+1]];}
+   bvh=new MeshBVH(geo);
+  }
+  surfaces.push({...item,source:item.geometry,geo,bvh,box:geo.boundingBox});
  }
  const ray=new T.Ray(),tri=new T.Triangle();
  function normal(s,index){const ids=s.geo.index.array,p=s.geo.attributes.position;tri.a.fromBufferAttribute(p,ids[index*3]);tri.b.fromBufferAttribute(p,ids[index*3+1]);tri.c.fromBufferAttribute(p,ids[index*3+2]);return tri.getNormal(new T.Vector3());}

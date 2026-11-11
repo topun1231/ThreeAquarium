@@ -23,6 +23,38 @@ test('blocked return turn lands gradually instead of ending the swim in midair',
  for(let i=0;i<150&&a.swim;i++){const before=a.position.clone();tickSwim(world,a,.05);assert.ok(a.position.distanceTo(before)<=.001251);if(arrivals)assert.ok(a.position.y<.0015);}
  assert.equal(arrivals,1);assert.equal(a.swim,null);
 });
+test('swim takeoff levels the whole body even when its head already points ahead',()=>{
+ const a={position:new T.Vector3(0,.12,0),rotation:new T.Quaternion().setFromAxisAngle(new T.Vector3(1,0,0),Math.PI),swim:{kind:'RoutineSwim',direction:new T.Quaternion(),returning:false,turning:true,clock:0,wait:0}};
+ const world={agents:[a],habitat:{traverse:()=>true},sync(){}};
+ tickSwim(world,a,.05);
+ assert.equal(a.swim.turning,true,'matching headings must not let a belly-up shrimp depart');
+ for(let i=0;i<40&&a.swim.turning;i++)tickSwim(world,a,.05);
+ assert.equal(a.swim.turning,false);
+ assert.ok(up.clone().applyQuaternion(a.rotation).y>.9);
+});
+
+test('swimming only finishes after the body aligns to its landing surface',()=>{
+ for(const kind of ['RoutineSwim','EscapeSwim'])for(const returning of [false,true]){
+  const surface=new T.Quaternion().setFromAxisAngle(new T.Vector3(1,0,0),Math.PI/2);
+  const start=new T.Vector3(0,.08,0),end=new T.Vector3(.06,.08,0);
+  const a={position:(returning?end:start).clone(),rotation:new T.Quaternion(),data:{},swim:{kind,start,rotation:surface.clone(),direction:new T.Quaternion(),control:new T.Vector3(.03,.12,0),landing:{position:end,rotation:surface.clone()},target:1,origin:0,t:returning?1:0,duration:1.1,wait:0,returning,turning:false,clock:0}};
+  let arrivals=0;
+  const world={agents:[a],elapsed:0,habitat:{traverse:()=>true},sync(){},arrive(){arrivals++;assert.ok(a.rotation.angleTo(surface)<.01,`${kind} returning=${returning} must align before arrival`);}};
+  for(let i=0;i<200&&a.swim;i++)tickSwim(world,a,.05);
+  assert.equal(arrivals,1);
+  assert.ok(a.position.distanceTo(returning?start:end)<1e-8);
+ }
+});
+
+test('vertical or zero travel still produces a finite supported orientation',()=>{
+ for(const normal of [up,new T.Vector3(1,0,0),new T.Vector3(0,0,1)])for(const travel of [normal,normal.clone().negate(),new T.Vector3()]){
+  const q=face(travel,normal);
+  assert.ok(Math.abs(q.length()-1)<1e-8);
+  assert.ok(up.clone().applyQuaternion(q).dot(normal)>.99999);
+  assert.ok(Math.abs(head(q).dot(normal))<1e-8);
+ }
+});
+
 test('utility scores retain Unity species coefficients',()=>{
  const data=structuredClone(seed.creatures[0]);Object.assign(data.Needs,{Hunger:.8,Fatigue:.2,Monotony:.3,Stress:.4,GroomNeed:.5});for(const k in data.Personality)data.Personality[k]=1;
  const s=scores(data,{food:.6,cover:.5,knows:true},seed.profile);
