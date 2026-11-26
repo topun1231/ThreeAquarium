@@ -1,9 +1,11 @@
 import * as T from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {stableSeed} from './state.js';
-import {SPECIES, FLORA_VARIANTS, floraSignature, planFlora, visibleNodes, visibleUpright} from './flora.js';
+import {javaFernFrond, riverbankLeaf} from './riverbank-leaves.js';
+import {SPECIES, FLORA_VARIANTS, floraSignature, visibleNodes, visibleUpright} from './flora.js';
 
 const UP = new T.Vector3(0, 1, 0);
+const RIBBON_EXTRA_REACH = [0, .42, 0, .64];
 
 function random(seed) {
   let a = seed >>> 0;
@@ -88,6 +90,10 @@ function merge(list) {
 }
 
 const UNITS = {
+  javafern:javaFernFrond,
+  fernAxis:() => stalk(.0019,1,.86,6),
+  vallisneria: (variant, rand) => riverbankLeaf(true, variant, rand),
+  browncrypt: (variant, rand) => riverbankLeaf(false, variant, rand),
   rotalaLeaves(v, rand) {
     const pair = (scale, yaw, pitch, along) => {
       const length = (0.016 + v * 0.0015) * scale;
@@ -147,6 +153,9 @@ const UNITS = {
 };
 
 const COLORS = {
+  javafern:new T.Color('#608d3c'), youngFern:new T.Color('#96a94b'),
+  rhizome:new T.Color('#7b7336'), fernRoot:new T.Color('#574839'),
+  vallisneria:new T.Color('#74983e'), browncrypt:new T.Color('#834930'), youngCrypt:new T.Color('#788347'),
   rotalaBase:new T.Color('#2f5c28'), rotalaMid:new T.Color('#7a6b28'), rotalaTip:new T.Color('#c45a3c'), rotalaStem:new T.Color('#3a4a28'),
   carpet:new T.Color('#3f8c38'), moss:new T.Color('#3a5c2c'), mossTip:new T.Color('#6a8a3c'),
 };
@@ -286,8 +295,13 @@ export class FloraView {
     this.density = 1;
     this.shadows = true;
     this.signature = '';
+    this.pearlRevision = 0;
     const t = this.time;
     this.materials = {
+      javafern:swayMaterial('Flora java fern blade', {amplitude:.0018,height:.19,time:t,roughness:.75,thin:.29}),
+      fernAxis:swayMaterial('Flora fern rhizome and roots', {amplitude:0,height:.1,time:t,roughness:.9,thin:.05}),
+      vallisneria:swayMaterial('Flora ribbon leaf', {amplitude:.005, height:.30, time:t, roughness:.61, thin:.42}),
+      browncrypt:swayMaterial('Flora bronze leaf', {amplitude:.0011, height:.08, time:t, roughness:.69, thin:.26}),
       rotalaLeaves:swayMaterial('Flora rotala leaf', {amplitude:0.0045, height:0.22, time:t, roughness:0.48, thin:0.48}),
       rotalaStem:swayMaterial('Flora rotala stem', {amplitude:0.0045, height:0.22, time:t, roughness:0.74, thin:0.04}),
       carpet:swayMaterial('Flora carpet', {amplitude:0.0005, height:0.008, time:t, roughness:0.55, thin:0.28}),
@@ -298,7 +312,7 @@ export class FloraView {
     this.units = {};
     this.tips = {};
     for (const key of Object.keys(UNITS)) {
-      const variants = key === 'rotalaStem' ? 1 : FLORA_VARIANTS;
+      const variants = key === 'rotalaStem' || key === 'fernAxis' ? 1 : FLORA_VARIANTS;
       this.units[key] = Array.from({length:variants}, (_, v) => UNITS[key](v, random(stableSeed(key + v))));
       this.tips[key] = this.units[key].map(tipOf);
     }
@@ -368,32 +382,11 @@ export class FloraView {
   }
 
   host(scene, id) {
+    if(scene.hostMatrix)return scene.hostMatrix(id);
     const node = scene.entities.get(id);
     if (!node) return null;
     node.updateMatrixWorld(true);
     return scene.unity ? node.matrixWorld.clone() : new T.Matrix4().copy(this.aq.root.matrixWorld).invert().multiply(node.matrixWorld);
-  }
-
-  plan(save, scene) {
-    const habitat = scene.habitat;
-    const probe = (x, z) => {
-      const hit = habitat.cast(new T.Vector3(x, 0.62, z), new T.Vector3(0, -1, 0), 0.7);
-      if (!hit) return null;
-      const n = hit.normal.clone();
-      if (n.y < 0) n.negate();
-      return {y:hit.point.y, kind:hit.surface.kind, owner:hit.surface.owner, normal:n.toArray()};
-    };
-    const plants = save.Tank.Plants.map(p => ({x:p.Position.x, z:p.Position.z}));
-    const out = [];
-    for (const r of planFlora(save.Tank.UniqueId, probe, plants)) {
-      if (!r.World) { out.push(r); continue; }
-      const id = [...scene.entities].find(([, node]) => node.name === r.Host)?.[0] ?? r.Host.replace(/^[WR]0 /, ''), matrix = this.host(scene, id);
-      if (!matrix) continue;
-      const inverse = matrix.clone().invert(), local = new T.Vector3(...r.World).applyMatrix4(inverse), normal = new T.Vector3(...r.WorldNormal).applyNormalMatrix(new T.Matrix3().setFromMatrix4(matrix).transpose());
-      const {World, WorldNormal, ...rest} = r;
-      out.push({...rest, Host:id, Local:local.toArray(), Normal:normal.toArray()});
-    }
-    return out;
   }
 
   sync(save, runtime, force = false) {
@@ -409,7 +402,11 @@ export class FloraView {
     this.build(save.Tank.Flora, scene);
   }
 
-  instances(list, scene) {
+  instances(list, scene, distant = false) {
+    return this.instanceSteps(list, scene, distant).next().value;
+  }
+
+  *instanceSteps(list, scene, distant, checkpoint) {
     const buckets = new Map();
     const add = (key, variant, matrix, color, stem, owner) => {
       const name = key + ':' + variant;
@@ -418,9 +415,10 @@ export class FloraView {
       b.matrices.push(matrix); b.colors.push(color); b.stems.push(stem); b.owners.push(owner); b.leaves.push(owner.leaves ?? 99);
     };
     const soil = scene.soil, habitat = scene.habitat;
-    const tmp = {q:new T.Quaternion(), q2:new T.Quaternion(), v:new T.Vector3(), s:new T.Vector3()};
+    const tmp = {q:new T.Quaternion(), q2:new T.Quaternion(), v:new T.Vector3(), s:new T.Vector3(), box:new T.Box3()};
     const hostSurfaces = new Map();
     for (const record of list) {
+      const pause = checkpoint?.(); if (pause) yield pause;
       const spec = SPECIES[record.Species], rand = random(stableSeed(record.UniqueId)), n = visibleNodes(record), phase = rand() * 6.28;
       const hueShift = record.Hue * 0.035;
       if (spec.kind === 'stem') {
@@ -442,12 +440,68 @@ export class FloraView {
           const leafColor = (t < 0.48 ? COLORS.rotalaBase.clone() : t < 0.74 ? COLORS.rotalaBase.clone().lerp(COLORS.rotalaMid, (t - 0.48) / 0.26) : COLORS.rotalaMid.clone().lerp(COLORS.rotalaTip, (t - 0.74) / 0.26)).offsetHSL(hueShift + (rand() - 0.5) * 0.025, (rand() - 0.45) * 0.08, (rand() - 0.5) * 0.04);
           if (k < 3) leafColor.offsetHSL(0.02, -0.04, -0.03);
           tmp.q2.setFromAxisAngle(UP, record.Yaw + k * (Math.PI / 2 + (rand() - 0.5) * 0.22) + (rand() - 0.5) * 0.45);
-          add('rotalaLeaves', (record.Variant + k) % FLORA_VARIANTS, new T.Matrix4().compose(p.clone(), tmp.q.clone().multiply(tmp.q2), new T.Vector3(size, size, size)), leafColor, stem, {id:record.UniqueId, node:k});
+          if(!distant || k % 3 === 0 || fromTip === 0)
+            add('rotalaLeaves', (record.Variant + k) % FLORA_VARIANTS, new T.Matrix4().compose(p.clone(), tmp.q.clone().multiply(tmp.q2), new T.Vector3(size, size, size)), leafColor, stem, {id:record.UniqueId, node:k});
+        }
+      } else if (spec.kind === 'groundFan') {
+        const key = record.Species, ribbon = key === 'vallisneria';
+        const tallness = ribbon ? T.MathUtils.smoothstep(record.Scale, 1.10, 1.58) : 0;
+        const minHeight = T.MathUtils.lerp(.68, 1.04, tallness);
+        const maxHeight = T.MathUtils.lerp(1.06, 1.21, tallness);
+        const base = new T.Vector3(record.X, soil.sample(record.X, record.Z) - .001, record.Z);
+        for (let i = 0; i < n; i++) {
+          const variant = (record.Variant + i) % FLORA_VARIANTS;
+          const fan = record.Yaw + phase + i * 2.39996 + (rand() - .5) * .36;
+          let yaw = fan, swayPhase = phase;
+          if (ribbon) {
+            const radius=.008*record.Scale;
+            base.x=record.X+radius*Math.cos(fan);
+            base.z=record.Z+radius*Math.sin(fan);
+            base.y=soil.sample(base.x,base.z)-.001;
+            yaw=.48*Math.sin(fan);
+            swayPhase=.32*Math.sin(fan)+.18*Math.sin(phase);
+          }
+          let spread = (.55 + rand() * .65) * record.Scale;
+          let height = T.MathUtils.lerp(minHeight, maxHeight, rand()) * record.Scale;
+          const color = COLORS[key].clone();
+          if (key === 'browncrypt') color.lerp(COLORS.youngCrypt, rand() ** 2 * .68);
+          color.offsetHSL(hueShift + (rand() - .5) * .018, 0, (rand() - .5) * .032);
+          // Shorten outward leaves at the glass, leaving inward-facing leaves free to arch.
+          const unit = this.units[key][variant].boundingBox;
+          const margin = Math.max(unit.max.z,-unit.min.z) * record.Scale + this.materials[key].userData.sway.amplitude * 4;
+          // At the downstream pane the current turns along the glass.
+          if(ribbon){
+            // Longer blades trail beyond their neighbours at the same water depth.
+            spread *= 1 + RIBBON_EXTRA_REACH[variant] * tallness;
+            // Ease the last few centimetres so the tallest leaves keep different crests below the ripples.
+            const ceiling = .58 - .008 - base.y;
+            const excess = height * unit.max.y - (ceiling - .04);
+            if (excess > 0) height = (ceiling - .04 * Math.exp(-excess / .04)) / unit.max.y;
+            const room = T.MathUtils.clamp((.6-margin-base.x)/(unit.max.x*spread),0,1);
+            const alongGlass = 1.51 * T.MathUtils.clamp(base.z/.07 + .5*Math.sin(fan),-1,1);
+            yaw = T.MathUtils.lerp(yaw,alongGlass,1-room*room);
+          }
+          tmp.q.setFromAxisAngle(UP, yaw);
+          const pose=new T.Matrix4().compose(base,tmp.q,tmp.s.set(spread,height,record.Scale));
+          if(ribbon){
+            // The lower blade can bow upstream even when its tip clears the pane.
+            const b=tmp.box.copy(unit).applyMatrix4(pose),guard=this.materials[key].userData.sway.amplitude*4;
+            const fit=Math.max(.01,Math.min(1,
+              (.6-base.x-guard)/Math.max(.001,b.max.x-base.x),(.6+base.x-guard)/Math.max(.001,base.x-b.min.x),
+              (.3-base.z-guard)/Math.max(.001,b.max.z-base.z),(.3+base.z-guard)/Math.max(.001,base.z-b.min.z)));
+            if(fit<1)pose.scale(tmp.v.set(fit,1,fit));
+          }else{
+            const dx=Math.cos(yaw),dz=-Math.sin(yaw);
+            const roomX=.6-Math.sign(dx)*base.x-margin,roomZ=.3-Math.sign(dz)*base.z-margin;
+            const reach=Math.max(.025,Math.min(spread,roomX/Math.max(.001,Math.abs(dx)*unit.max.x),roomZ/Math.max(.001,Math.abs(dz)*unit.max.x)));
+            pose.scale(tmp.v.set(reach/spread,1,1));
+          }
+          add(key, variant, pose, color, [base.x,base.y,base.z,swayPhase], {id:record.UniqueId,node:i});
         }
       } else if (spec.kind === 'carpet') {
         const clumps = 6 + (n > 80 ? 3 : 1);
         for (let i = 0; i < n; i++) {
-          if (random(stableSeed(record.UniqueId + i))() > this.density) continue;
+          if ((!distant || i>0) && random(stableSeed(record.UniqueId + i))() > (distant ? .24 : this.density)) continue;
           const clump = i % clumps, cr = random(stableSeed(record.UniqueId + ':c' + clump));
           const mound = 0.014 + cr() * 0.016, edge = i * 2.39996 + cr() * 0.55;
           const radius = mound * Math.pow(rand(), 0.55) * (0.7 + 0.4 * Math.sin(edge * 1.4 + record.Hue));
@@ -465,20 +519,56 @@ export class FloraView {
         const owner = scene.entities.get(record.Host)?.name;
         if (!hostSurfaces.has(owner)) hostSurfaces.set(owner, habitat.surfaces.filter(s => s.owner === owner));
         const surfaces = hostSurfaces.get(owner);
-        const snap = point => {
+        const snap = (point, fallback=point) => {
           let best = null;
           for (const s of surfaces) {
             const h = s.bvh.closestPointToPoint(point, {}, 0, 0.022);
             if (h && (!best || h.distance < best.distance)) best = h;
           }
-          return best ? best.point.clone() : point;
+          return best ? best.point.clone() : fallback;
         };
         const tangent = new T.Vector3().crossVectors(normal, Math.abs(normal.y) > 0.9 ? new T.Vector3(1, 0, 0) : UP).normalize();
         const bitangent = new T.Vector3().crossVectors(normal, tangent);
-        if (spec.kind === 'moss') {
+        if (spec.kind === 'fern') {
+          const heading=new T.Vector3(Math.cos(record.Yaw),0,Math.sin(record.Yaw)).transformDirection(matrix);
+          heading.addScaledVector(normal,-normal.dot(heading));
+          if(heading.lengthSq()<.001)heading.copy(tangent);
+          heading.normalize();
+          const scale=record.Scale, stem=[anchor.x,anchor.y,anchor.z,phase];
+          const previous=[anchor.clone(),anchor.clone()];
+          const segment=(from,to,radius,color,node)=>{
+            const axis=to.clone().sub(from),length=axis.length();
+            if(length<.0001)return;
+            tmp.q.setFromUnitVectors(UP,axis.divideScalar(length));
+            add('fernAxis',0,new T.Matrix4().compose(from,tmp.q,tmp.s.set(radius,length,radius)),color,stem,{id:record.UniqueId,node});
+          };
+          for(let i=0;i<n;i++){
+            const side=i%2, along=(side?1:-1)*Math.ceil(i/2)*.0055*scale;
+            const guess=anchor.clone().addScaledVector(heading,along);
+            const knot=snap(guess,surfaces.length?anchor:guess).addScaledVector(normal,.0017*scale);
+            segment(previous[side],knot,scale,COLORS.rhizome,i);
+            previous[side]=knot;
+            const bend=knot.clone().addScaledVector(normal,.003*scale).addScaledVector(heading,(rand()-.5)*.012*scale);
+            bend.y-=.007*scale;
+            const end=bend.clone().addScaledVector(heading,(rand()-.5)*.012*scale);
+            end.y-=(.008+rand()*.012)*scale;
+            segment(knot,bend,.27*scale,COLORS.fernRoot,i);segment(bend,end,.15*scale,COLORS.fernRoot,i);
+            const variant=(record.Variant+i)%FLORA_VARIANTS,angle=phase+i*2.39996+(rand()-.5)*.40;
+            const dir=new T.Vector3(Math.cos(angle),0,-Math.sin(angle));
+            if(dir.dot(normal)<0)dir.reflect(normal).setY(0).normalize();
+            const yaw=Math.atan2(-dir.z,dir.x),unit=this.units.javafern[variant].boundingBox;
+            const reach=(.66+rand()*.63)*scale, height=(.70+rand()*.45)*scale;
+            const roomX=.59-Math.sign(dir.x)*knot.x, roomZ=.29-Math.sign(dir.z)*knot.z;
+            const spread=Math.max(.025,Math.min(reach,(roomX-.024*scale)/Math.max(.001,Math.abs(dir.x)*unit.max.x),
+              (roomZ-.024*scale)/Math.max(.001,Math.abs(dir.z)*unit.max.x)));
+            tmp.q.setFromAxisAngle(UP,yaw);
+            const color=COLORS.javafern.clone().lerp(COLORS.youngFern,rand()**2*.7);
+            add('javafern',variant,new T.Matrix4().compose(knot,tmp.q,tmp.s.set(spread,height,scale)),color,stem,{id:record.UniqueId,node:i});
+          }
+        } else if (spec.kind === 'moss') {
         const count = Math.max(n, 36);
         for (let i = 0; i < count; i++) {
-            if (random(stableSeed(record.UniqueId + i))() > this.density) continue;
+            if ((!distant || i>0) && random(stableSeed(record.UniqueId + i))() > (distant ? .24 : this.density)) continue;
             const angle = i * 2.39996 + record.Yaw, radius = 0.012 * Math.sqrt(i + 0.12) * record.Scale;
             const hang = Math.max(0, 0.62 - normal.y) * (0.008 + rand() * 0.014);
             const guess = anchor.clone().addScaledVector(tangent, Math.cos(angle) * radius).addScaledVector(bitangent, Math.sin(angle) * radius * (0.65 + rand() * 0.55)).addScaledVector(UP, -hang);
@@ -516,15 +606,18 @@ export class FloraView {
     return buckets;
   }
 
-  build(list, scene) {
-    const buckets = this.instances(list, scene), used = new Set();
+  build(list, scene, {root=this.root, meshes=this.meshes, distant=false, pickIndices}={}) {
+    const buckets = this.instances(list, scene, distant), used = new Set();
     for (const [name, b] of buckets) {
       used.add(name);
-      let entry = this.meshes.get(name);
+      let entry = meshes.get(name);
       if (!entry || entry.capacity < b.matrices.length) {
-        if (entry) { this.root.remove(entry.mesh); entry.mesh.geometry.dispose(); entry.mesh.dispose(); }
+        if (entry) { root.remove(entry.mesh); entry.mesh.geometry.dispose(); entry.mesh.dispose(); }
         const capacity = Math.ceil(b.matrices.length * 1.5) + 8;
-        const geometry = this.units[b.key][b.variant].clone();
+        const unit=this.units[b.key][b.variant];
+        const geometry=unit.clone();
+        const indices=pickIndices?.(unit,b.key);
+        if(indices)geometry.setIndex(new T.BufferAttribute(indices.slice(),1));
         const stems = new T.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
         geometry.setAttribute('aqStem', stems);
         const leafAttr = geometry.attributes.aqNode ? new T.InstancedBufferAttribute(new Float32Array(capacity), 1) : null;
@@ -533,21 +626,23 @@ export class FloraView {
         mesh.name = 'Flora ' + name;
         mesh.instanceColor = new T.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
         mesh.receiveShadow = true;
-        mesh.frustumCulled = false;
+        mesh.frustumCulled = distant;
         mesh.userData.flora = true;
         if (leafAttr) mesh.raycast = floraLeafRaycast;
         if (mesh.material.customDepthMaterial) mesh.customDepthMaterial = mesh.material.customDepthMaterial;
-        this.root.add(mesh);
+        root.add(mesh);
         entry = {mesh, capacity, stems, leafAttr};
-        this.meshes.set(name, entry);
+        meshes.set(name, entry);
       }
       const {mesh, stems, leafAttr} = entry;
-      const authoredTips = this.tipNodes?.[b.key];
-      mesh.userData.tip = authoredTips?.length ? this.tips[b.key][0] : this.tips[b.key][b.variant];
-      mesh.userData.tips = authoredTips?.length ? this.tips[b.key] : [this.tips[b.key][b.variant]];
-      mesh.userData.tipNormals = mesh.userData.tips.map(tip => normalAtTip(mesh.geometry, tip));
-      mesh.userData.tipNodes = authoredTips || [];
-      mesh.castShadow = this.shadows && (['rotalaLeaves', 'rotalaStem'].includes(b.key) || /^(pala|nullified)/.test(b.key));
+      if(!distant){
+        const authoredTips = this.tipNodes?.[b.key];
+        mesh.userData.tip = authoredTips?.length ? this.tips[b.key][0] : this.tips[b.key][b.variant];
+        mesh.userData.tips = authoredTips?.length ? this.tips[b.key] : [this.tips[b.key][b.variant]];
+        mesh.userData.tipNormals = mesh.userData.tips.map(tip => normalAtTip(mesh.geometry, tip));
+        mesh.userData.tipNodes = authoredTips || [];
+      }
+      mesh.castShadow = this.shadows && b.key !== 'carpet' && b.key !== 'moss';
       b.matrices.forEach((m, i) => { mesh.setMatrixAt(i, m); mesh.setColorAt(i, b.colors[i]); stems.setXYZW(i, ...b.stems[i]); leafAttr?.setX(i, b.leaves[i]); });
       mesh.count = b.matrices.length;
       mesh.userData.owners = b.owners;
@@ -558,7 +653,8 @@ export class FloraView {
       mesh.computeBoundingSphere();
       mesh.visible = true;
     }
-    for (const [name, entry] of this.meshes) if (!used.has(name)) { entry.mesh.count = 0; entry.mesh.visible = false; entry.mesh.userData.owners = []; }
+    for (const [name, entry] of meshes) if (!used.has(name)) { entry.mesh.count = 0; entry.mesh.visible = false; entry.mesh.userData.owners = []; }
+    if(!distant)this.pearlRevision++;
   }
 
   hiddenFloraFace(hit) {
@@ -575,50 +671,80 @@ export class FloraView {
 
   update(time) { this.time.value = time; }
 
-  collisionItems(list, scene) {
-    const plants = new Map();
-    for (const b of this.instances(list, scene).values()) {
-      const unit = this.units[b.key][b.variant];
-      unit.computeBoundingBox();
-      // shortcut: tiny moss/carpet leaflets share a shoot support disc; use triangles if shrimp become smaller than a shoot.
-      const tiny = b.key === 'moss' || b.key === 'carpet';
-      const base = tiny ? new T.CircleGeometry(b.key === 'moss' ? .003 : .0025, 8).rotateX(-Math.PI/2).translate(0, unit.boundingBox.max.y, 0) : unit;
-      for (let i = 0; i < b.matrices.length; i++) {
-        const id = b.owners[i].id;
-        if (!plants.has(id)) plants.set(id, {parts:[], samples:[]});
-        const plant = plants.get(id), leaves = b.leaves[i];
-        const geo = (tiny ? base.clone() : keepVisibleLeaves(unit, leaves)).applyMatrix4(b.matrices[i]);
-        if (!tiny && geo.index && geo.index.count === 0) { geo.dispose(); continue; }
-        for (const attr of Object.keys(geo.attributes)) if (attr !== 'position') geo.deleteAttribute(attr);
-        const p = geo.attributes.position, stems = new Float32Array(p.count * 4), sways = new Float32Array(p.count * 2), sway = this.materials[b.key].userData.sway;
-        for (let j = 0; j < p.count; j++) { stems.set(b.stems[i], j*4); sways.set([sway.amplitude, sway.height], j*2); }
-        geo.setAttribute('floraStem', new T.BufferAttribute(stems, 4));
-        geo.setAttribute('floraSway', new T.BufferAttribute(sways, 2));
-        if (tiny) plant.samples.push(new T.Vector3(0, unit.boundingBox.max.y, 0).applyMatrix4(b.matrices[i]));
-        else if (b.key === 'rotalaStem') {
-          const tip = this.tips[b.key][b.variant];
-          for (const y of [.1,.5,1]) plant.samples.push(new T.Vector3(tip[0],y,tip[2]).applyMatrix4(b.matrices[i]));
-        } else {
-          const tipNodes = this.tipNodes?.[b.key] || [];
-          const tips = this.tips[b.key] || [];
-          if (tipNodes.length) {
-            for (let t = 0; t < tips.length; t++) {
-              if ((tipNodes[t] ?? 0) >= leaves) continue;
-              plant.samples.push(new T.Vector3(...tips[t]).applyMatrix4(b.matrices[i]));
-            }
-          } else if (tips[b.variant]) {
-            plant.samples.push(new T.Vector3(...tips[b.variant]).applyMatrix4(b.matrices[i]));
-          }
-          for (const j of [0, Math.floor(p.count*.25), Math.floor(p.count*.5)]) if (j < p.count) plant.samples.push(new T.Vector3().fromBufferAttribute(p,j));
+  collisionItems(list, scene, checkpoint) {
+    const steps = this.collisionSteps(list, scene, checkpoint);
+    if (!checkpoint) return steps.next().value;
+    return (async () => {
+      try {
+        for (let step = steps.next(); ; step = steps.next()) {
+          if (step.done) return step.value;
+          await step.value;
         }
-        plant.parts.push(geo);
+      } finally { steps.return(); }
+    })();
+  }
+
+  *collisionSteps(list, scene, checkpoint) {
+    const buckets = yield* this.instanceSteps(list, scene, false, checkpoint);
+    const plants = new Map(), items = [];
+    let disc, complete = false;
+    try {
+      for (const b of buckets.values()) {
+        if(b.key==='fernAxis')continue; // Shrimp perch on fronds; the fine root filaments only dress the rhizome.
+        const unit = this.units[b.key][b.variant];
+        unit.computeBoundingBox();
+        // shortcut: tiny moss/carpet leaflets share a shoot support disc; use triangles if shrimp become smaller than a shoot.
+        const tiny = b.key === 'moss' || b.key === 'carpet';
+        if (tiny) disc = new T.CircleGeometry(b.key === 'moss' ? .003 : .0025, 8).rotateX(-Math.PI/2).translate(0, unit.boundingBox.max.y, 0);
+        for (let i = 0; i < b.matrices.length; i++) {
+          if (i % 16 === 0) { const pause = checkpoint?.(); if (pause) yield pause; }
+          const id = b.owners[i].id;
+          if (!plants.has(id)) plants.set(id, {parts:[], samples:[]});
+          const plant = plants.get(id), leaves = b.leaves[i];
+          const geo = (disc ? disc.clone() : keepVisibleLeaves(unit, leaves)).applyMatrix4(b.matrices[i]);
+          if (!tiny && geo.index && geo.index.count === 0) { geo.dispose(); continue; }
+          plant.parts.push(geo);
+          for (const attr of Object.keys(geo.attributes)) if (attr !== 'position') geo.deleteAttribute(attr);
+          const p = geo.attributes.position, stems = new Float32Array(p.count * 4), sways = new Float32Array(p.count * 2), sway = this.materials[b.key].userData.sway;
+          for (let j = 0; j < p.count; j++) { stems.set(b.stems[i], j*4); sways.set([sway.amplitude, sway.height], j*2); }
+          geo.setAttribute('floraStem', new T.BufferAttribute(stems, 4));
+          geo.setAttribute('floraSway', new T.BufferAttribute(sways, 2));
+          if (tiny) plant.samples.push(new T.Vector3(0, unit.boundingBox.max.y, 0).applyMatrix4(b.matrices[i]));
+          else if (b.key === 'rotalaStem') {
+            const tip = this.tips[b.key][b.variant];
+            for (const y of [.1,.5,1]) plant.samples.push(new T.Vector3(tip[0],y,tip[2]).applyMatrix4(b.matrices[i]));
+          } else {
+            const tipNodes = this.tipNodes?.[b.key] || [];
+            const tips = this.tips[b.key] || [];
+            if (tipNodes.length) {
+              for (let t = 0; t < tips.length; t++) {
+                if ((tipNodes[t] ?? 0) >= leaves) continue;
+                plant.samples.push(new T.Vector3(...tips[t]).applyMatrix4(b.matrices[i]));
+              }
+            } else if (tips[b.variant]) {
+              plant.samples.push(new T.Vector3(...tips[b.variant]).applyMatrix4(b.matrices[i]));
+            }
+            for (const j of [0, Math.floor(p.count*.25), Math.floor(p.count*.5)]) if (j < p.count) plant.samples.push(new T.Vector3().fromBufferAttribute(p,j));
+          }
+        }
+        disc?.dispose(); disc = null;
       }
-      if (tiny) base.dispose();
+      for (const [id, plant] of plants) {
+        if (!plant.parts.length) continue;
+        const pause = checkpoint?.(); if (pause) yield pause;
+        const geometry = mergeGeometries(plant.parts, false); plant.parts.forEach(g => g.dispose());
+        plant.parts.length = 0;
+        items.push({node:'flora/'+id, owner:'Plant '+id, kind:3, solid:false, flora:true, ownedSource:true, material:{motion:1, leaf:1}, geometry, transform:new T.Matrix4(), samples:plant.samples});
+      }
+      complete = true;
+      return items;
+    } finally {
+      disc?.dispose();
+      if (!complete) {
+        for (const plant of plants.values()) for (const geo of plant.parts) geo.dispose();
+        for (const item of items) item.geometry.dispose();
+      }
     }
-    return [...plants].filter(([, plant]) => plant.parts.length).map(([id, plant]) => {
-      const geometry = mergeGeometries(plant.parts, false); plant.parts.forEach(g => g.dispose());
-      return {node:'flora/'+id, owner:'Plant '+id, kind:3, solid:false, flora:true, ownedSource:true, material:{motion:1, leaf:1}, geometry, transform:new T.Matrix4(), samples:plant.samples};
-    });
   }
 
   pearlSites() {
@@ -626,7 +752,7 @@ export class FloraView {
     for (const [key, {mesh}] of this.meshes) {
       if (!mesh.visible || !mesh.count) continue;
       const name = mesh.name || '';
-      if (!/rotalaLeaves|carpet|moss/.test(name) && !this.leafKeys?.has(key.split(':')[0])) continue;
+      if (!/rotalaLeaves|carpet|moss|vallisneria|browncrypt|javafern/.test(name) && !this.leafKeys?.has(key.split(':')[0])) continue;
       const vigor = /rotala/.test(name) ? 1.4 : /pala|nullified/.test(name) ? 0.55 : 0.7;
       const keep = /rotala/.test(name) ? 0.3 : /pala|nullified/.test(name) ? 0.16 : 0.08;
       const locals = Array.isArray(mesh.userData.tips) && mesh.userData.tips.length ? mesh.userData.tips : [mesh.userData.tip || [0.008, 0.001, 0]];
@@ -676,9 +802,8 @@ export class FloraView {
 
 /** Collision-only fallback for callers without a rendered FloraView. */
 let collisionView;
-export function floraCollisionItems(list, {soil, hostMatrix, habitat = {surfaces:[]}}) {
+export function floraCollisionItems(list, {soil, hostMatrix, habitat = {surfaces:[]}}, checkpoint) {
   collisionView ??= new FloraView({root:new T.Group(), materials:[]});
-  collisionView.host = (_scene, id) => hostMatrix?.(id) || null;
-  const entities = new Map(list.filter(r => r.Host).map(r => [r.Host, {name:'W0 '+r.Host}]));
-  return collisionView.collisionItems(list, {soil, habitat, entities});
+  const entities = new Map(habitat.surfaces.filter(s=>s.solid && s.owner).map(s=>[s.owner.slice(3),{name:s.owner}]));
+  return collisionView.collisionItems(list, {soil, habitat, entities, hostMatrix:hostMatrix ?? (() => null)}, checkpoint);
 }

@@ -1,0 +1,65 @@
+async page => {
+  const check=(v,msg)=>{if(!v)throw Error(msg);};
+  const c=id=>page.locator('#crystal-'+id);
+  const data=()=>page.evaluate(()=>aquarium.game.data.Breeding);
+  const act=a=>page.evaluate(value=>aquarium.game.crystalAction(value),a);
+  const ready=()=>page.waitForFunction(()=>window.aquarium?.ready);
+  const book=async()=>{if(await c('panel').isHidden())await c('open').click();await c('tab-breed').click();};
+  const expand=async target=>{if(!await target.evaluate(el=>el.open))await target.locator(':scope > summary').click();};
+  const box=mode=>c(mode+'-intent').locator('xpath=ancestor::details[1]');
+  const row=id=>page.locator('.crystal-batch[data-batch-id="'+id+'"]');
+  const at=async time=>{await page.clock.setFixedTime(new Date(time));await act({type:'advance'});};
+  const waitForCount=n=>page.waitForFunction(n=>aquarium.game.data.Breeding.batches.length===n,n);
+  const note='小枫背上的白带很宽，墨点的边缘很清楚。我想等孩子都长大，再看看这两个地方会不会出现在同一只身上。';
+  const naturalNote='这窝先随它们，想看看哪只最先在沉木边露脸。';
+  await page.locator('#welcome-dismiss').click();await c('open').click();await c('start').click();await c('panel').waitFor({state:'hidden'});
+  await page.evaluate(async()=>{const game=aquarium.game,snapshot=game.snapshot();snapshot.session.Breeding.rngState=7;await game.restore(snapshot);});
+  await page.clock.setFixedTime(new Date(await page.evaluate(()=>Date.now())));
+  await book();await c('mother').selectOption('I1');await c('father').selectOption('I2');await c('breeding-tank').selectOption('breeding');await c('brood-size').selectOption('4');
+  check(!await box('pair').evaluate(el=>el.open),'Journal offered a prompt before it was requested');
+  await expand(box('pair'));await c('pair-intent').fill('甲'.repeat(61));await c('plan').click();
+  check(await c('pair-intent').getAttribute('aria-invalid')==='true' && !(await data()).batches.length,'Overlength entry created a brood');
+  await c('pair-intent').fill(note);await c('pair-intent').press('Enter');check(!await box('pair').evaluate(el=>el.open),'Enter did not close the field');
+  await expand(page.locator('.crystal-natural'));await expand(box('natural'));await c('natural-intent').fill(naturalNote);await c('natural-intent').press('Escape');
+  await page.reload();await ready();await book();
+  check(await c('pair-intent').inputValue()===note && await c('natural-intent').inputValue()===naturalNote,'Refresh mixed the two drafts');
+  check(!(await data()).batches.length,'An input started a batch');
+  await page.evaluate(()=>{const original=Storage.prototype.setItem;window.releaseIntentTestWrite=()=>{Storage.prototype.setItem=original;};Storage.prototype.setItem=function(k,v){if(k==='aquarium.three.creatures.v1')throw Error('模拟留话存档失败');return original.call(this,k,v);};});
+  try{
+    await c('plan').click();await c('feedback').filter({hasText:'模拟留话存档失败'}).waitFor();
+    check(!(await data()).batches.length && await c('pair-intent').inputValue()===note,'Failure consumed a draft or started a brood');
+  }finally{await page.evaluate(()=>window.releaseIntentTestWrite());}
+  await c('plan').click();await waitForCount(1);const first=(await data()).batches[0];
+  check(first.intent===note && first.size===4 && !(await c('pair-intent').inputValue()) && await c('natural-intent').inputValue()===naturalNote,'Successful submission cleared the wrong field');
+  await expand(page.locator('.crystal-natural'));await c('natural-size').selectOption('2');await c('natural-plan').click();await waitForCount(2);const natural=(await data()).batches[1];check(natural.intent===naturalNote,'Natural brood mixed or lost notes');
+  await row(natural.id).getByRole('button',{name:'取消未形成的计划'}).click();await page.waitForFunction(id=>aquarium.game.data.Breeding.batches.find(b=>b.id===id).status==='cancelled',natural.id);
+  const hasNote=async (id,value)=>{await row(id).locator(':scope > .crystal-brood-intent').filter({hasText:value}).waitFor();};
+  await at(first.formedAt+1000);await hasNote(first.id,note);await at(first.hatchAt+1000);await hasNote(first.id,note);await at(first.adultAt+1000);await hasNote(first.id,note);
+  const review=row(first.id).locator('.crystal-review');await expand(review);
+  const photos=await page.waitForFunction(id=>{const images=[...document.querySelectorAll('.crystal-batch[data-batch-id="'+id+'"] .crystal-review .crystal-parents img,.crystal-batch[data-batch-id="'+id+'"] .crystal-brood-gallery img')];return images.length===6 && images.every(im=>im.complete && im.naturalWidth>0) ? images.map(im=>getComputedStyle(im).transform):null;},first.id).then(v=>v.jsonValue());
+  check(photos.every(v=>v==='none'),'The mother and offspring still face opposite ways');
+  const children=(await data()).batches[0].children,daughter=children.find(r=>r.sex==='female');check(daughter && children.every(x=>x.pattern==='band'),'Test family missing');
+  await review.locator('[data-brood-locate="'+daughter.id+'"]').click();await expand(c('tank-growth'));await c('tank-growth').locator('.crystal-brood-intent').filter({hasText:note}).waitFor();
+  await book();await expand(review);await expand(review.locator('[data-lineage="actions:'+daughter.id+'"]'));await review.locator('[data-album-child="'+daughter.id+'"]').click();await page.waitForFunction(id=>aquarium.game.data.Breeding.batches[0].representativeId===id,daughter.id);
+  await c('tab-album').click();await c('album-page').selectOption(first.id);await page.locator('.crystal-album-plate .crystal-brood-intent').filter({hasText:note}).waitFor();
+  await page.evaluate(()=>{const original=CanvasRenderingContext2D.prototype.fillText;window.writtenIntentLines=[];window.releaseIntentText=()=>{CanvasRenderingContext2D.prototype.fillText=original;};CanvasRenderingContext2D.prototype.fillText=function(...args){if(this.canvas.width===864)window.writtenIntentLines.push(args[0]);return original.apply(this,args);};});
+  let png,lines;
+  try{const [download]=await Promise.all([page.waitForEvent('download'),c('album-save').click()]);const stream=await download.createReadStream(),chunks=[];for await(const chunk of stream)chunks.push(chunk);png=Buffer.concat(chunks);lines=await page.evaluate(()=>window.writtenIntentLines);await download.saveAs('output/playwright/brood-intent-keepsake.png');}finally{await page.evaluate(()=>window.releaseIntentText());}
+  const idx=lines.indexOf('配对时的留话');
+  check(png.readUInt32BE(16)===864 && png.readUInt32BE(20)>580 && idx>=0 && lines.slice(idx+1).join('')===note,'The exported picture lost text or squeezed the long note');
+  await book();await expand(review);await review.getByRole('button',{name:'沿用这对',exact:true}).click();
+  check(await c('pair-intent').inputValue()==='','The last question was automatically assigned to the next brood');await expand(box('pair'));
+  await c('reuse-intent').click();check(await c('pair-intent').inputValue()===note,'Could not explicitly reuse the earlier question');
+  const question2='我还想看看墨点的孩子长大后，白带边缘是什么样。';await c('pair-intent').fill(question2);await c('brood-size').selectOption('2');await c('plan').click();await waitForCount(3);
+  const second=(await data()).batches.at(-1);await at(second.adultAt+1000);await hasNote(second.id,question2);
+  await c('mother').selectOption('I1');await c('father').selectOption('I2');await c('past-offspring').click();
+  await page.setViewportSize({width:390,height:750});const paired=page.locator('.crystal-pair-history[open] [data-portrait-brood]');await paired.first().waitFor();
+  check(await paired.count()===2 && (await paired.allTextContents()).some(t=>t.includes(note)) && (await paired.allTextContents()).some(t=>t.includes(question2)),'Past broods lost their distinct notes');
+  await c('brood-return').click();await c('mother').selectOption(daughter.id);await c('father').selectOption('I3');await c('breeding-tank').selectOption('main');await c('brood-size').selectOption('2');
+  check(!await c('pair-intent').inputValue(),'The next generation inherited its birth note');await c('plan').click();await waitForCount(4);
+  const third=(await data()).batches.at(-1);check(!('intent' in third),'Blank question consumed a note');await page.clock.setFixedTime(new Date(third.adultAt+2*86400000));
+  await page.reload();await ready();await book();await hasNote(first.id,note);await hasNote(second.id,question2);
+  const settled=await data();const latest=settled.batches.find(b=>b.id===third.id);check(latest.status==='complete' && !('intent' in latest),'Offline recovery changed the note or brood');
+  check(await row(third.id).locator(':scope > .crystal-brood-intent').isHidden(),'Empty notes appeared in the journal');
+  return {firstParents:[first.motherId,first.fatherId],firstChildren:children.map(x=>[x.id,x.pattern,x.P[1]]),laterParents:[third.motherId,third.fatherId],grandchildren:latest.children.map(x=>[x.id,x.pattern]),naturalNoteIsSeparate:true,draftsSurviveReload:true,failedWriteCanRetry:true,parentsAndChildrenFaceSameWay:photos.length,optionalReuse:true,twoNotesSideBySide:true,export:[png.readUInt32BE(16),png.readUInt32BE(20)],noteLines:lines.slice(idx+1).length,twoDayRecovery:true};
+}

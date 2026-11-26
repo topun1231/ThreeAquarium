@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as T from 'three';
+import {readFileSync} from 'node:fs';
 import {FOG_GLSL, viewZ, waterTravel, fogAmount} from '../src/water-fog.js';
 
 const camera = new T.PerspectiveCamera(32, 16 / 9, 0.002, 30);
@@ -33,5 +34,7 @@ test('fog path is scene depth minus glass depth and grows with distance through 
 
 test('shader uses the same ordering as the tested math', () => {
   assert.match(FOG_GLSL, /aqViewZ\(sceneDepth\)-aqViewZ\(glassDepth\)/);
-  assert.match(FOG_GLSL, /aqTravel\(gl_FragCoord\.z,texture2D\(aqDepth,uv\)\.r\)/);
+  const waterShader=readFileSync(new URL('../src/water.js',import.meta.url),'utf8');
+  assert.equal(waterShader.match(/aqTravel\(gl_FragCoord\.z,texture2D\(aqDepth,uv\)\.r\)/g)?.length,1);
+  assert.match(FOG_GLSL,/min\(sceneDistance,min\(leave\.x,min\(leave\.y,leave\.z\)\)\)/);
 });

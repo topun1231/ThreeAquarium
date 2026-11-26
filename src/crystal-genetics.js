@@ -31,11 +31,25 @@ export function generateOffspring(motherB, fatherB, rng) {
   return {B, P, sex:draw(rng) < 0.5 ? 'female' : 'male'};
 }
 
+export const FINE_BAND = 'fine-band';
+const colourWeights = Object.freeze([.5,.25,.25]), patternWeights = Object.freeze([.25,.25,.5]);
+const fineBandWeights = Object.freeze([.25,.5,.25]);
+export function contestWeights(theme) {
+  if (theme === 'colour') return colourWeights;
+  if (theme === 'pattern') return patternWeights;
+  if (theme === FINE_BAND) return fineBandWeights;
+  throw new RangeError('未知比赛主题');
+}
+
+// This class rewards a narrower white marking. The animal keeps its original coverage.
+export function judgedTrait(P, theme, index) {
+  return theme === FINE_BAND && index === 1 ? 10 - P[1] : P[index];
+}
+
 export function scoreShrimp(P, theme) {
   validateQuality(P);
-  if (theme === 'colour') return P[0] * 0.5 + P[1] * 0.25 + P[2] * 0.25;
-  if (theme === 'pattern') return P[0] * 0.25 + P[1] * 0.25 + P[2] * 0.5;
-  throw new RangeError('未知比赛主题');
+  const weights = contestWeights(theme);
+  return P[0] * weights[0] + judgedTrait(P, theme, 1) * weights[1] + P[2] * weights[2];
 }
 
 export function rateScore(score) {

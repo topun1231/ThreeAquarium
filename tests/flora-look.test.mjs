@@ -1,11 +1,139 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as T from 'three';
-import {FloraView, floraUnitMetrics} from '../src/flora-view.js';
+import {FloraView, floraUnitMetrics, swayFloraPoint} from '../src/flora-view.js';
+import {makeFloraRecord, pruneFlora, growFlora, sanitizeFlora} from '../src/flora.js';
+import {plantGhost, disposePlantGhost} from '../src/plant-preview.js';
 
 function view() {
   return new FloraView({root:new T.Group(), materials:[]});
 }
+
+test('ribbon leaves rise from the crown, bend downstream and flex at the tips',()=>{
+  const flora=view(), scene={soil:{sample:()=>.04},entities:new Map(),habitat:{surfaces:[]}};
+  for(const yaw of [0,Math.PI]){
+    const record=makeFloraRecord({id:'current-ribbon',species:'vallisneria',variant:0,x:-.25,z:.10,yaw});
+    const tips=[];
+    for(const bucket of flora.instances([record],scene).values()){
+      const position=flora.units.vallisneria[bucket.variant].attributes.position;
+      for(const [i,pose] of bucket.matrices.entries()){
+        const centre=row=>new T.Vector3().fromBufferAttribute(position,row*5+2).applyMatrix4(pose);
+        const rows=position.count/5-1, root=centre(0), lower=centre(rows/4), upper=centre(rows*3/4), tip=centre(rows);
+        assert.ok(lower.y-root.y>Math.abs(lower.x-root.x),'the base rises first');
+        assert.ok(tip.x-root.x>.075 && tip.x-upper.x>tip.y-upper.y,'the upper ribbon sweeps right');
+        const move=(p,time)=>swayFloraPoint(p.clone(),bucket.stems[i],flora.materials.vallisneria.userData.sway,time);
+        assert.ok(move(root,0).distanceTo(move(root,3))<.00001);
+        assert.ok([1,3,6].some(t=>move(tip,t).distanceTo(move(tip,0))>.001));
+        tips.push(tip.z);
+      }
+    }
+    assert.ok(Math.max(...tips)-Math.min(...tips)>.04,'the leaves open to different depths within the current');
+  }
+  for(const x of [-.56,.56]) for(const z of [-.26,.26]){
+    const record=makeFloraRecord({id:'edge3',species:'vallisneria',variant:0,x,z,yaw:3});
+    record.Scale=1.6; record.Nodes=14;
+    for(const b of flora.instances([record],scene).values()){
+      const vertices=flora.units.vallisneria[b.variant].attributes.position;
+      for(const [i,pose] of b.matrices.entries())for(let v=0;v<vertices.count;v++){
+        const p=new T.Vector3().fromBufferAttribute(vertices,v).applyMatrix4(pose);
+        for(const time of [0,2,4,6]){
+          const moving=swayFloraPoint(p.clone(),b.stems[i],flora.materials.vallisneria.userData.sway,time);
+          assert.ok(Math.abs(moving.x)<.6 && Math.abs(moving.z)<.3,'the full blade stays inside the glass');
+        }
+      }
+    }
+  }
+});
+
+test('only some tall ribbons extend beyond the ordinary fan',()=>{
+  const flora=view(), scene={soil:{sample:()=>.05}};
+  const record=makeFloraRecord({id:'open-bank',species:'vallisneria',variant:0,x:-.25,z:0});
+  function reachPerScale(scale){
+    record.Scale=scale;
+    return [...flora.instances([record],scene).values()].map(b=>{
+      const vertices=flora.units.vallisneria[b.variant].attributes.position,pose=b.matrices[0];
+      const tip=new T.Vector3().fromBufferAttribute(vertices,vertices.count-3).applyMatrix4(pose);
+      return (tip.x-pose.elements[12])/scale;
+    });
+  }
+  const short=reachPerScale(1),tall=reachPerScale(1.42);
+  assert.equal(tall.filter((x,i)=>x>short[i]*1.25).length,2);
+  assert.equal(tall.filter((x,i)=>Math.abs(x-short[i])<.001).length,2);
+});
+
+test('tall ribbon crowns approach the water without breaking through on a raised bed',()=>{
+  const flora=view();
+  for(const bed of [.05,.18]) for(const id of ['cup','left-bank','regrown']){
+    const scene={soil:{sample:()=>bed},entities:new Map(),habitat:{surfaces:[]}};
+    const record=makeFloraRecord({id,species:'vallisneria',variant:0,x:-.54,z:.25});
+    record.Scale=1.58;
+    record.Nodes=14;
+    let crest=0;
+    for(const b of flora.instances([record],scene).values()){
+      const bounds=flora.units.vallisneria[b.variant].boundingBox;
+      for(const pose of b.matrices) crest=Math.max(crest,bounds.clone().applyMatrix4(pose).max.y);
+    }
+    assert.ok(crest>.54 && crest<.573,`ribbon crest at ${crest} on bed ${bed}`);
+  }
+});
+
+test('Java fern keeps its rhizome on the host and the same surviving fronds through a trim and reload',()=>{
+  const flora=view(), matrix=new T.Matrix4().makeTranslation(-.17,.15,.04);
+  const scene={soil:{sample:()=>0},entities:new Map(),hostMatrix:()=>matrix,habitat:{surfaces:[]}};
+  const r=makeFloraRecord({id:'fern',species:'javafern',variant:0,host:'wood',local:[0,0,0],normal:[0,1,0]});
+  const fronds=record=>new Map([...flora.instances([record],scene).values()].filter(b=>b.key==='javafern')
+    .flatMap(b=>b.owners.map((owner,i)=>[owner.node,b.matrices[i].toArray()])));
+  const before=fronds(r);
+  assert.equal(before.size,8);
+  const material=new T.MeshBasicMaterial();
+  const ghost=plantGhost(r,null,flora,material,scene);
+  assert.ok(ghost.children.some(mesh=>mesh.count>8),'the preview includes the creeping rhizome and fine roots');
+  disposePlantGhost(ghost);material.dispose();
+  pruneFlora(r);
+  const [saved]=sanitizeFlora(JSON.parse(JSON.stringify([r])));
+  const after=fronds(saved);
+  assert.ok(after.size<before.size);
+  for(const [node,pose] of after)assert.deepEqual(pose,before.get(node));
+  growFlora([saved],86400*8);
+  assert.ok(fronds(saved).size>after.size);
+  const [item]=flora.collisionItems([saved],scene);
+  item.geometry.computeBoundingBox();
+  assert.ok(item.geometry.boundingBox.max.y>.24);
+  item.geometry.dispose();
+});
+
+test('riverbank leaves preview, prune and regrow from the same rooted meshes after reload', () => {
+  const flora = view(), scene = {soil:{sample:()=>.055}, entities:new Map(), habitat:{surfaces:[]}};
+  const material = new T.MeshBasicMaterial();
+  for (const species of ['vallisneria','browncrypt']) {
+    const record = makeFloraRecord({id:'edge-'+species,species,variant:0,x:.56,z:-.26,yaw:1});
+    record.Scale=1.6;
+    const buckets = () => [...flora.instances([record],scene).values()];
+    const poses = () => new Map(buckets().flatMap(b => b.owners.map((owner,i)=>[owner.node,b.matrices[i].toArray()])));
+    const expected = poses();
+    assert.equal(expected.size,record.Nodes);
+    const ghost = plantGhost(record,null,flora,material,scene);
+    assert.equal(ghost.children.reduce((n,m)=>n+m.count,0),record.Nodes);
+    disposePlantGhost(ghost);
+    const items=flora.collisionItems([record],scene);
+    assert.equal(items.length,1);
+    const geometry=items[0].geometry;
+    geometry.computeBoundingBox();
+    const box=geometry.boundingBox;
+    assert.ok(box.max.x<.6 && box.min.z>-.3);
+    assert.ok(Math.abs(box.min.y-.054)<.001);
+    assert.ok(species==='vallisneria' ? box.max.y>.28 : box.max.y<.22);
+    geometry.dispose();
+    pruneFlora(record);
+    for(const [node,pose] of poses()) assert.deepEqual(pose,expected.get(node));
+    assert.ok(poses().size<expected.size);
+    assert.deepEqual(sanitizeFlora(JSON.parse(JSON.stringify([record]))),[record]);
+    growFlora([record],86400*40);
+    assert.ok(poses().size>expected.size);
+    for(const [node,pose] of expected) assert.deepEqual(poses().get(node),pose);
+  }
+  material.dispose();
+});
 
 function positions(flora, re) {
   const out = [], M = new T.Matrix4();

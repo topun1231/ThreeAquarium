@@ -4,6 +4,23 @@ import {MeshoptSimplifier} from 'meshoptimizer/simplifier';
 let initialized;
 export const dropSignature=({bodies,ground,wake=[]})=>JSON.stringify([bodies.map(b=>[b.key,b.wood||false,wake.includes(b.id)]),ground.rows,ground.columns,ground.width,ground.depth,Array.from(ground.heights)]);
 
+function fixedTrimesh(vertices,indices){
+  // The simplifier returns indices into the render mesh. Keep only the positions these faces use.
+  const remap=new Int32Array(vertices.length/3).fill(-1);
+  for(const index of indices)remap[index]=0;
+  let count=0;
+  for(let i=0;i<remap.length;i++)if(remap[i]===0)remap[i]=count++;
+  if(count<remap.length){
+    const used=new Float32Array(count*3);
+    for(let i=0;i<remap.length;i++)if(remap[i]>=0){
+      const j=remap[i]*3;
+      used[j]=vertices[i*3];used[j+1]=vertices[i*3+1];used[j+2]=vertices[i*3+2];
+    }
+    vertices=used;indices=indices.map(i=>remap[i]);
+  }
+  return RAPIER.ColliderDesc.trimesh(vertices,indices,RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES);
+}
+
 export async function createDropWorld({bodies,ground,wake=[]}, shapes=new Map(), prepared=null) {
   initialized ||= Promise.all([RAPIER.init(),MeshoptSimplifier.ready]);
   await initialized;
@@ -44,7 +61,7 @@ export async function createDropWorld({bodies,ground,wake=[]}, shapes=new Map(),
             // Keep boundaries and sub-millimetre detail; the full render mesh still validates the final pose.
             const [indices,error]=MeshoptSimplifier.simplify(mesh.indices,mesh.vertices,3,Math.min(6000,mesh.indices.length),.0004,['ErrorAbsolute','LockBorder']);
             if(!Number.isFinite(error)||error>.0004)throw Error('木石碰撞网格误差超限');
-            desc=RAPIER.ColliderDesc.trimesh(mesh.vertices,indices,RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES);
+            desc=fixedTrimesh(mesh.vertices,indices);
           }else{
             // Concave wood needs multiple convex pieces, not one hull across its gaps.
             desc=RAPIER.ColliderDesc.convexDecomposition(mesh.vertices,mesh.indices,{resolution:64,maxConvexHulls:64,concavity:.002,convexHullApproximation:false});

@@ -10,6 +10,7 @@ export function validateSession(value,runtime){
  if(!Array.isArray(tank.Plants)||tank.Plants.length>120||!Array.isArray(tank.Hardscape)||tank.Hardscape.length>24)throw new Error('造景数量超出上限');
  for(const r of [...tank.Plants,...tank.Hardscape]){if(typeof r.UniqueId!=='string'||r.UniqueId.length>100||ids.has(r.UniqueId))throw new Error('造景身份无效');ids.add(r.UniqueId);for(const k of ['x','y','z'])if(!finite(r.Position?.[k],-1,1)||!finite(r.Rotation?.[k],-3600,3600)||!finite(r.Scale?.[k],.000001,100))throw new Error('造景位置或尺寸无效');if(Math.abs(r.Position.x)>.65||Math.abs(r.Position.z)>.35||r.Position.y<-.1||r.Position.y>.65)throw new Error('造景超出鱼缸');}
  for(const p of tank.Plants){if(!runtime.definitions.some(d=>d.TypeId===p.TypeId)||!finite(p.Growth,0,1e6)||!finite(p.EcologicalAgeSeconds,0,1e12)||!Number.isInteger(p.Stage)||p.Stage<0||p.Stage>3||!finite(p.Health,0,1)||!Array.isArray(p.Cuts)||p.Cuts.length>100)throw new Error('植物生长记录无效');
+  if(p.RecoveredCutsHash!==undefined && (!Number.isInteger(p.RecoveredCutsHash) || !finite(p.RecoveredCutsHash,0,0xffffffff)))throw new Error('已愈合剪口记录无效');
   for(const c of p.Cuts)if(!['x','y','z'].every(k=>finite(c.LocalCenter?.[k],-10,10))||!finite(c.RadiusMeters,.001,.3)||!finite(c.HeightFraction,0,1)||!finite(c.HeightMeters,0,1)||!finite(c.EcologicalAgeAtCut,0,p.EcologicalAgeSeconds))throw new Error('修剪记录无效');
  }
  for(const r of tank.Hardscape)if(!runtime.entries.has(r.TypeId)||r.Burial!==undefined&&!finite(r.Burial,0,.03))throw new Error('木石规格无效');

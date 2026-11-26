@@ -1,6 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateAppearance, validateShrimpName, predictAppearance, offspringAppearance} from '../src/crystal-traits.js';
+import {validateAppearance, validateShrimpName, predictAppearance, offspringAppearance, matchesShrimpSearch, broodAlternatives, broodQualityTarget} from '../src/crystal-traits.js';
+
+test('双目标落空时可分开比较花色与品质，按可见分数保留并列',()=>{
+  const kid=(id,pattern,score)=>({id,colour:'red',pattern,P:[6,score,5]});
+  const a=kid('a','band',7), b=kid('b','band',7.003), c=kid('c','mosura',8);
+  const target=broodQualityTarget('coverage',c,a);
+  const choices=(kids,goal)=>broodAlternatives(kids,goal,target).map(({kid,byLook})=>[kid.id,byLook]);
+  assert.deepEqual(choices([c,a,b],'red:band'),[['a',true],['b',true],['c',false]]);
+  assert.deepEqual(choices([a,b],'red:band'),[['a',true],['b',true]]);
+  assert.deepEqual(choices([c,{id:'old',P:c.P}],'red:band'),[['c',false],['old',false]]);
+  assert.deepEqual(choices([a,c,kid('hit','band',8.1)],'red:band'),[]);
+  assert.deepEqual(choices([a,c],''),[]);
+});
+
+test('虾名、所在缸和连续输入的花色可以组合查找同一个体', () => {
+  const fields=['墨点','黑晶 · 条带纹','繁育缸','I2'];
+  assert.ok(matchesShrimpSearch('繁育缸 黑晶条带 墨点',...fields));
+  assert.ok(matchesShrimpSearch('i2　黑晶 · 条带',...fields));
+  assert.equal(matchesShrimpSearch('红晶条带 墨点',...fields),false);
+});
 
 const mother = {id:'mother', name:'小枫', colour:'red', pattern:'band', traitGroup:'crystal-game-v1'};
 const father = {id:'father', name:'墨点', colour:'black', pattern:'hinomaru', traitGroup:'crystal-game-v1'};

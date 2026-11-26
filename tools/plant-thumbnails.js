@@ -4,8 +4,8 @@ import {PLANT_STOCK} from '../src/material-picker.js';
 import {makeFloraRecord} from '../src/flora.js';
 import {keepVisibleLeaves} from '../src/flora-view.js';
 
-export async function renderPlantThumbnails({runtime,flora}) {
-  await runtime.ensureCatalog();
+export async function renderPlantThumbnails({runtime,flora}, stock = PLANT_STOCK) {
+  if (stock.some(p => !p.species || p.species === 'pala' || p.species === 'nullified')) await runtime.ensureCatalog();
   const renderer=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});
   renderer.setSize(360,240);renderer.setPixelRatio(1);
   renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.25;
@@ -18,7 +18,7 @@ export async function renderPlantThumbnails({runtime,flora}) {
   const habitat={soil,unity:true,entities:new Map([['thumbnail-host',host]]),habitat:{surfaces:[]}};
   const images=[];
   try {
-    for(const item of PLANT_STOCK){
+    for(const item of stock){
       const root=new T.Group(),materials=[],geometries=[];
       if(item.species){
         const record=makeFloraRecord({id:'catalog-'+item.id,species:item.species,variant:item.variant,x:0,z:0,host:'thumbnail-host',local:[0,0,0],normal:[0,1,0]});

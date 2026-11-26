@@ -1,12 +1,368 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createBreedingState, validateBreedingState, applyBreedingAction, publicBreedingState, shopCatalogue, batchTankId, naturalPair} from '../src/crystal-breeding.js';
+import {booksForDescendant, childrenByParent, familyRoutes, validateLineBooks} from '../src/crystal-line-books.js';
+import {createBreedingState, createGrowthDueCheck, validateBreedingState, applyBreedingAction, publicBreedingState, shopCatalogue, batchTankId, naturalPair,tankOccupancy,canSelectParent,activeParentBatch} from '../src/crystal-breeding.js';
 
 const GROWTH = 2700000, FORM = 120000, HATCH = 600000;
 const shrimp = (id, sex = 'female', tank = 'breeding', extra = {}) => ({id, sex, B:[6, 6, 6], P:[6, 6, 6], tank, adultAt:0, protected:false, source:'founder', parents:null, ...extra});
 const initial = (extra = []) => createBreedingState([shrimp('mother'), shrimp('father', 'male'), ...extra], {now:0, seed:7});
 const plan = (state, size = 4, now = state.now) => applyBreedingAction(state, {type:'plan', motherId:'mother', fatherId:'father', tankId:'breeding', size}, now);
 const tick = (state, now) => applyBreedingAction(state, {type:'advance'}, now);
+
+test('选育手记只记录玩家挑的个体，父母双方均可追到同一个外孙辈',()=>{
+  const start=initial([shrimp('second-father','male')]);
+  const first=tick(plan(start),GROWTH);
+  const daughter=first.individuals.find(r=>r.parents && r.sex==='female');
+  const aunt=first.individuals.find(r=>r.parents && r.id!==daughter.id);
+  const next=applyBreedingAction(first,{type:'plan',motherId:daughter.id,fatherId:'second-father',size:2,tankId:'breeding'},first.now);
+  const grown=tick(next,next.batches[1].adultAt), grand=grown.batches[1].children[0].id;
+  const act=(s,a)=>applyBreedingAction(s,a,s.now);
+  const title=id=>({type:'nameLineBook',founderId:id,title:'尾白',previousTitle:null});
+  const mark=(founderId,id,marked=true)=>({type:'markLineMember',founderId,id,marked});
+  const old=structuredClone(grown);
+  assert.ok(!('lineBooks' in grown));
+  let kept=act(act(grown,title('mother')),title('father'));
+  assert.deepEqual(kept.lineBooks.map(b=>b.members),[[],[]]);
+  kept=act(act(kept,mark('mother',grand)),mark('father',grand));
+  assert.deepEqual(act(kept,mark('mother',grand)),kept);
+  assert.deepEqual(kept.lineBooks.map(b=>b.members),[[grand],[grand]]);
+  assert.deepEqual(publicBreedingState(kept).lineBooks,kept.lineBooks);
+  const {lineBooks,...unchanged}=kept;
+  assert.deepEqual(unchanged,old);assert.deepEqual(grown,old);
+  const resting=act(kept,{type:'rest',id:grand});
+  const recalled=act(resting,{type:'recall',id:grand,tankId:'breeding'});
+  const sold=act(recalled,{type:'sell',id:grand});
+  assert.deepEqual(validateBreedingState(JSON.parse(JSON.stringify(sold))).lineBooks,lineBooks);
+  const separated=act(sold,mark('father',grand,false));
+  assert.deepEqual(separated.lineBooks.map(b=>b.members),[[grand],[]]);
+  const byId=new Map(grown.individuals.map(r=>[r.id,r]));
+  assert.deepEqual(booksForDescendant(byId.get(grand),byId,lineBooks),lineBooks);
+  const niece=act(kept,title(aunt.id));
+  assert.throws(()=>act(niece,mark(aunt.id,grand)),/后代/);
+});
+
+test('旧档可自由进出手记，未知、未孵化、重复或迟到的记录不会覆盖进度',()=>{
+  const formed=tick(plan(initial([shrimp('unrelated','male','main')]),2),FORM);
+  const found={type:'nameLineBook',founderId:'mother',title:'尾白',previousTitle:null};
+  const act=(s,a)=>applyBreedingAction(s,a,s.now);
+  const book=act(formed,found), kid=book.batches[0].children[0].id;
+  assert.deepEqual(act(book,found),book);
+  assert.throws(()=>act(formed,{...found,founderId:'missing'}),/起点/);
+  assert.throws(()=>act(formed,{...found,title:'  '}),/名字/);
+  const keep=(id,marked=true)=>({type:'markLineMember',founderId:'mother',id,marked});
+  for(const id of [kid,'mother','unrelated','missing']){
+    assert.throws(()=>act(book,keep(id)),/后代/);
+    assert.throws(()=>act(book,keep(id,false)),/后代/);
+  }
+  const hatched=tick(book,HATCH);
+  const childBook=act(hatched,{...found,founderId:kid});
+  assert.equal(childBook.lineBooks.at(-1).founderId,kid);
+  const marked=act(hatched,keep(kid));
+  const renamed=act(marked,{...found,title:'头白',previousTitle:'尾白'});
+  const discard={type:'discardLineBook',founderId:'mother',previousTitle:'尾白',previousMembers:[]};
+  assert.throws(()=>act(marked,discard),/已有变化/);
+  assert.throws(()=>act(renamed,{...found,title:'新手记',previousTitle:'尾白'}),/已有变化/);
+  assert.throws(()=>act(renamed,{...discard,previousMembers:[kid]}),/已有变化/);
+  for(const damaged of [null, [{...marked.lineBooks[0],members:[kid,kid]}],
+    [...marked.lineBooks,...marked.lineBooks], [{...marked.lineBooks[0],members:['unrelated']}]]){
+    assert.throws(()=>validateBreedingState({...marked,lineBooks:damaged}));
+  }
+  assert.deepEqual(act(renamed,{...discard,previousTitle:'头白',previousMembers:[kid]}),tick(formed,HATCH));
+  assert.equal(hatched.lineBooks[0].members.length,0);
+});
+
+test('两支家系交汇时每只只出现一次，能找到两边的手记和最短亲缘记录',()=>{
+  const records=[
+    {id:'root'}, {id:'other'}, {id:'a',parents:['root','other']},
+    {id:'b',parents:['a','other']}, {id:'c',parents:['b','root']}, {id:'d',parents:['b','c']},
+    {id:'original',legacy:true}
+  ];
+  const byId=new Map(records.map(r=>[r.id,r]));
+  const routes=familyRoutes(childrenByParent(records),'root');
+  assert.equal(routes.size,5);assert.equal(routes.get('c'),'root');
+  assert.equal(routes.get('d'),'c');assert.ok(!routes.has('other'));
+  const books=['a','root','other','d'].map(founderId=>({founderId,title:'同名',members:[]}));
+  assert.deepEqual(booksForDescendant(byId.get('d'),byId,books).map(b=>b.founderId),['a','root','other']);
+  assert.throws(()=>validateLineBooks([{founderId:'original',title:'原来的虾',members:[]}],byId),/起点/);
+});
+
+const rehouse = (state, ids, tankId, extra={}) => applyBreedingAction(state,{
+  type:'rehouse',tankId,residents:ids.map(id=>({id,from:'main'})),...extra,
+},state.now);
+
+test('同批移缸保留个体和收藏，幼虾可移缸，成年后才可静养',()=>{
+  const state=initial([shrimp('saved','female','main',{protected:true,observation:'背上留白'}),shrimp('young','male','main',{adultAt:HATCH})]);
+  const before=structuredClone(state);
+  assert.throws(()=>rehouse(state,['saved','young'],'rest'),/暂时不能/);
+  const moved=rehouse(state,['young','saved'],'breeding');
+  const expected=structuredClone(before);
+  for(const r of expected.individuals)if(r.id==='young'||r.id==='saved')r.tank='breeding';
+  assert.deepEqual(moved,expected);
+  const resting=rehouse(state,['saved'],'rest');
+  const returned=applyBreedingAction(resting,{type:'recall',id:'saved',tankId:'main'},0);
+  assert.deepEqual(returned,before);assert.deepEqual(state,before);
+});
+
+test('重复、迟到、活动亲虾与主缸原配均不能夹进同一批安置',()=>{
+  const state=plan(initial([shrimp('a','female','main'),shrimp('b','male','main'),shrimp('c','male','main')]));
+  const before=structuredClone(state);
+  assert.throws(()=>rehouse(state,['a','a'],'rest'),/不同/);
+  assert.throws(()=>rehouse(state,['a','mother'],'rest',{residents:[{id:'a',from:'main'},{id:'mother',from:'breeding'}]}),/暂时不能/);
+  assert.throws(()=>rehouse(state,['b','a'],'rest',{motherId:'a',fatherId:'b'}),/亲虾保留/);
+  const pair=naturalPair(state);
+  assert.deepEqual(pair,{motherId:'a',fatherId:'b'});
+  assert.throws(()=>rehouse(state,['c'],'rest',{natural:true,motherId:'a',fatherId:'c'}),/亲虾已有变化/);
+  assert.equal(rehouse(state,['c'],'rest',{natural:true,...pair}).individuals.at(-1).tank,'rest');
+  const changed=rehouse(state,['b'],'rest');
+  assert.throws(()=>rehouse(changed,['a','b'],'breeding'),/换缸/);
+  assert.deepEqual(state,before);
+});
+
+test('多人同时移入时为未孵化后代留位，静养四位满后不作部分安置',()=>{
+  const guests=Array.from({length:6},(_,i)=>shrimp('g'+i,'female','main'));
+  const planned=plan(initial([...guests,shrimp('r1'),shrimp('r2'),shrimp('r3')]));
+  const before=structuredClone(planned);
+  assert.throws(()=>rehouse(planned,['g0','g1'],'breeding'),/预留/);
+  assert.equal(tankOccupancy(rehouse(planned,['g2'],'breeding'),'breeding').animals,6);
+  const three=rehouse(planned,['g0','g1','g2'],'rest');
+  assert.throws(()=>rehouse(three,['g3','g4'],'rest'),/静养位置已满/);
+  assert.equal(three.individuals.filter(r=>r.tank==='rest').length,3);
+  assert.deepEqual(planned,before);
+});
+
+// A two-pixel JPEG. Browser coverage separately downloads and decodes a real tank frame.
+const photoJPEG = '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAIDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD5/ooooA//2Q==';
+const tankPhoto = (id, individualId='mother', at=10) => ({
+  id:'00000000-0000-4000-8000-'+String(id).padStart(12,'0'), individualId, tankId:'breeding', name:'浅砂', at, jpeg:photoJPEG,
+});
+const keepPhoto = (state, photo, replaceId) => applyBreedingAction(state, {type:'keepTankPhoto',photo,replaceId}, Math.max(state.now,photo.at));
+
+function studyBrood() {
+  const founders=initial();
+  Object.assign(founders.individuals[0],{colour:'red',pattern:'band'});
+  Object.assign(founders.individuals[1],{colour:'black',pattern:'hinomaru'});
+  return tick(plan(founders),HATCH);
+}
+
+test('记下同窝两只时保留玩家选择的顺序、部位和当时的年龄，旧档可照常打开',()=>{
+  const state=studyBrood(), batch=state.batches[0];
+  const study={ids:[batch.children[3].id,batch.children[1].id],at:HATCH,crop:'head'};
+  const keep={type:'keepSiblingStudy',batchId:batch.id,...study};
+  const kept=applyBreedingAction(state,keep,HATCH);
+  const expected=structuredClone(state);expected.batches[0].siblingStudy=study;
+  assert.deepEqual(kept,expected);
+  assert.equal(state.batches[0].siblingStudy,undefined);
+  assert.deepEqual(validateBreedingState(JSON.parse(JSON.stringify(state))),state);
+  const aged=tick(kept,GROWTH+3*86400000);
+  assert.deepEqual(applyBreedingAction(aged,keep,aged.now),aged);
+  const sold=applyBreedingAction(aged,{type:'sell',id:study.ids[0]},aged.now);
+  assert.deepEqual(validateBreedingState(JSON.parse(JSON.stringify(sold))).batches[0].siblingStudy,study);
+});
+
+test('换记另一对要核对原记录，重复点击与迟到的确认不会覆盖后来记下的一对',()=>{
+  const state=studyBrood(), batch=state.batches[0], ids=batch.children.map(r=>r.id);
+  const first={ids:ids.slice(0,2),at:HATCH,crop:'whole'}, next={ids:ids.slice(2),at:HATCH+2,crop:'back'};
+  const keep=(value,study,previous)=>applyBreedingAction(value,{type:'keepSiblingStudy',batchId:batch.id,...study,previous},HATCH+2);
+  const marked=keep(state,first);
+  assert.throws(()=>keep(marked,next),/已有变化/);
+  const changed=keep(marked,next,first);
+  assert.deepEqual(keep(changed,next,first),changed);
+  assert.throws(()=>keep(changed,{...first,crop:'head'},first),/已有变化/);
+  assert.deepEqual(marked.batches[0].siblingStudy,first);
+  assert.deepEqual(changed.batches[0].siblingStudy,next);
+});
+
+test('同窝手记拒绝猜出的旧花色、别窝虾、重复身份，以及孵化之前和未来的对照',()=>{
+  const state=studyBrood(), batch=state.batches[0], ids=batch.children.slice(0,2).map(r=>r.id);
+  const study={ids,at:HATCH,crop:'back'};
+  for (const change of [{ids:[ids[0],ids[0]]},{ids:[ids[0],'other']},{ids:[ids[0]]},{at:HATCH-1},{at:HATCH+1},{crop:'side'}]) {
+    const invalid={...study,...change};
+    assert.throws(()=>applyBreedingAction(state,{type:'keepSiblingStudy',batchId:batch.id,...invalid},HATCH));
+    const imported=structuredClone(state);imported.batches[0].siblingStudy=invalid;
+    assert.throws(()=>validateBreedingState(imported));
+  }
+  const old=tick(plan(initial()),HATCH), withoutLook=old.batches[0];
+  assert.throws(()=>applyBreedingAction(old,{type:'keepSiblingStudy',batchId:withoutLook.id,...study,ids:withoutLook.children.slice(0,2).map(r=>r.id)},HATCH),/花色/);
+  const formed=tick(plan(initial()),FORM);formed.batches[0].siblingStudy=study;
+  assert.throws(()=>validateBreedingState(formed),/孵化/);
+});
+
+test('缸边照片冻结拍摄时的名字和缸，读档、移缸、转让都能认回原个体',()=>{
+  const state=initial(), photo=tankPhoto(1), captured=keepPhoto(state,photo);
+  assert.equal(state.tankPhotos,undefined);
+  assert.deepEqual(captured.batches,state.batches);
+  assert.equal(captured.cash,state.cash);
+  const renamed=applyBreedingAction(captured,{type:'rename',id:'mother',name:'青石'},12);
+  const moved=applyBreedingAction(renamed,{type:'move',id:'mother',tankId:'main'},14);
+  const sold=applyBreedingAction(moved,{type:'sell',id:'mother'},15);
+  assert.deepEqual(validateBreedingState(JSON.parse(JSON.stringify(sold))).tankPhotos,[photo]);
+  assert.throws(()=>keepPhoto(moved,tankPhoto(2,'mother',15)),/这口缸/);
+  assert.throws(()=>keepPhoto(sold,tankPhoto(2,'mother',16)),/已转让/);
+});
+
+test('照片分别保存玩家的留言，成年虾转让后也能补记，改写个体观察不会改动旧照',()=>{
+  const first=tankPhoto(1), second=tankPhoto(2);
+  const noted=applyBreedingAction(initial(),{type:'observation',id:'mother',value:'白色很厚'},10);
+  const original=keepPhoto(noted,first);
+  const album=applyBreedingAction(original,{type:'keepTankPhoto',photo:second,caption:'背上像月牙 🦐'},13);
+  assert.equal(album.tankPhotos[0].caption,undefined);
+  assert.deepEqual(album.tankPhotos[1].caption,{text:'背上像月牙 🦐',at:13});
+  const changed=applyBreedingAction(album,{type:'observation',id:'mother',value:'今天在木头旁边'},14);
+  const retired=applyBreedingAction(changed,{type:'sell',id:'mother'},15);
+  const write={type:'captionTankPhoto',id:first.id,individualId:first.individualId,previousText:'',previousAt:null,value:'这是它原来住的地方'};
+  const added=applyBreedingAction(retired,write,16);
+  assert.deepEqual(added.tankPhotos[0],{...first,caption:{text:write.value,at:16}});
+  assert.deepEqual(added.tankPhotos[1],album.tankPhotos[1]);
+  assert.deepEqual(added.individuals,retired.individuals);
+  assert.equal(added.cash,retired.cash);
+  assert.deepEqual(validateBreedingState(JSON.parse(JSON.stringify(added))).tankPhotos,added.tankPhotos);
+  assert.throws(()=>applyBreedingAction(added,{...write,value:'来自过时的编辑'},17),/留言已变动/);
+  const clear=applyBreedingAction(added,{...write,previousText:write.value,previousAt:16,value:''},18);
+  assert.deepEqual(clear.tankPhotos[0],first);
+  assert.equal(retired.tankPhotos[0].caption,undefined);
+});
+
+test('留影留言只属于指定照片，校验失败保留原图和原文',()=>{
+  const photo=tankPhoto(1), state=keepPhoto(initial(),photo);
+  const edit={type:'captionTankPhoto',id:photo.id,individualId:'mother',previousText:'',previousAt:null,value:'小虾'};
+  assert.throws(()=>applyBreedingAction(state,{...edit,individualId:'father'},14),/留影已变动/);
+  assert.throws(()=>applyBreedingAction(state,{...edit,id:tankPhoto(2).id},14),/留影已变动/);
+  for(const value of ['虾'.repeat(61),'第一行\n第二行',' 有空格',123]) {
+    assert.throws(()=>applyBreedingAction(state,{...edit,value},14));
+    assert.throws(()=>applyBreedingAction(state,{type:'keepTankPhoto',photo:tankPhoto(2),caption:value,replaceId:photo.id},14));
+  }
+  for(const caption of [null, {text:'',at:10}, {text:'一笔',at:9}, {text:'一笔',at:11}, {text:'一笔'}]) {
+    assert.throws(()=>validateBreedingState({...state,tankPhotos:[{...photo,caption}]}),/照片留言/);
+  }
+  assert.deepEqual(state.tankPhotos,[photo]);
+});
+
+test('满册只能明确指定替换，损坏照片、错号和重复编号不覆盖旧照',()=>{
+  const photos=[1,2,3,4].map(i=>tankPhoto(i));
+  const full=photos.reduce((s,p)=>keepPhoto(s,p), initial());
+  assert.throws(()=>keepPhoto(full,tankPhoto(5)),/已满/);
+  assert.throws(()=>keepPhoto(full,tankPhoto(5),'unknown'),/替换/);
+  assert.throws(()=>keepPhoto(full,tankPhoto(1),photos[1].id),/留影/);
+  for(const change of [{jpeg:'data:image/svg+xml,<svg/>'},{jpeg:photoJPEG.slice(0,-4)}, {jpeg:'A'.repeat(49156)}, {individualId:'gone'}])
+    assert.throws(()=>keepPhoto(full,{...tankPhoto(5),...change},photos[1].id));
+  assert.deepEqual(full.tankPhotos,photos);
+  const next=keepPhoto(full,tankPhoto(5),photos[1].id);
+  assert.deepEqual(next.tankPhotos.map(p=>p.id),[photos[0].id,photos[2].id,photos[3].id,tankPhoto(5).id]);
+  assert.throws(()=>applyBreedingAction(next,{type:'removeTankPhoto',id:photos[1].id},11),/不在相册/);
+  const cleared=next.tankPhotos.reduce((s,p)=>applyBreedingAction(s,{type:'removeTankPhoto',id:p.id},11),next);
+  assert.equal(cleared.tankPhotos,undefined);
+});
+
+test('不能生成孵化前、购买前或未来的缸边留影',()=>{
+  const hatched=tick(plan(initial(),2),HATCH), kid=hatched.batches[0].children[0];
+  assert.throws(()=>keepPhoto(hatched,tankPhoto(1,kid.id,HATCH-1)),/留影/);
+  assert.equal(keepPhoto(hatched,tankPhoto(1,kid.id,HATCH)).tankPhotos.length,1);
+  const purchased=applyBreedingAction(initial(),{type:'buy',tankId:'breeding',productId:'basic-male'},20);
+  const shopId=purchased.purchases[0].individualId;
+  assert.throws(()=>keepPhoto(purchased,tankPhoto(1,shopId,19)),/留影/);
+  assert.throws(()=>validateBreedingState({...purchased,tankPhotos:[tankPhoto(1,shopId,21)]}),/留影/);
+});
+
+test('玩家写下的观察只跟随这只虾，成年、移缸及转让后仍可阅读',()=>{
+  const hatched=tick(plan(initial(),2),HATCH), original=structuredClone(hatched);
+  const [child,sibling]=hatched.batches[0].children, note='尾扇前的白带很窄 🦐';
+  const write=(state,value)=>applyBreedingAction(state,{type:'observation',id:child.id,value},state.now);
+  const marked=write(hatched,note), read=(state,id=child.id)=>state.individuals.find(r=>r.id===id).observation;
+  assert.deepEqual(hatched,original);
+  assert.equal(read(marked),note);
+  assert.equal(read(marked,sibling.id),undefined);
+  assert.deepEqual(marked.batches,original.batches);
+  assert.deepEqual(write(marked,''),original);
+  const moved=applyBreedingAction(marked,{type:'move',id:child.id,tankId:'main'},GROWTH);
+  const sold=applyBreedingAction(moved,{type:'sell',id:child.id},GROWTH);
+  assert.equal(read(publicBreedingState(validateBreedingState(JSON.parse(JSON.stringify(sold))))),note);
+  assert.throws(()=>write(sold,'改写'),/已转让/);
+  assert.equal(read(write(hatched,'🦐'.repeat(60))),'🦐'.repeat(60));
+  for(const bad of [13,'一\n二','一\u2028二','虾'.repeat(61)])assert.throws(()=>write(hatched,bad),/观察/);
+  original.batches[0].children[0].observation=note;
+  assert.throws(()=>validateBreedingState(original),/出生/);
+});
+
+test('成长检查复用当前进度的时间点，取消、换档、结算失败后仍按正确阶段触发',()=>{
+  const due=createGrowthDueCheck(), planned=plan(initial());
+  const cancelled=applyBreedingAction(planned,{type:'cancel',batchId:planned.batches[0].id},0);
+  let reads=0;
+  const observed=new Proxy(planned,{get(state,key){if(key==='batches'||key==='individuals')reads++;return state[key];}});
+  assert.equal(due(observed,FORM-1),false);
+  const initialReads=reads;
+  for(const now of [FORM,FORM+100,FORM+200])assert.equal(due(observed,now),true);
+  assert.equal(reads,initialReads);
+  assert.equal(due(cancelled,GROWTH),false);
+  for(const [state,at] of [[planned,FORM],[tick(planned,FORM),HATCH],[tick(planned,HATCH),GROWTH]]){
+    assert.equal(due(state,at-1),false);
+    assert.equal(due(state,at),true);
+  }
+  assert.equal(due(tick(planned,GROWTH),GROWTH+1),false);
+  assert.equal(due(initial([shrimp('juvenile','male','main',{adultAt:42})]),42),true);
+});
+
+test('自然繁殖确认时若另一只亲虾刚成年，会请玩家重看而不会静默换亲',()=>{
+  const state=createBreedingState([shrimp('young','female','main',{adultAt:10}),shrimp('dam','female','main'),shrimp('sire','male','main')],{now:0,seed:7});
+  const action={type:'natural',size:2,expectedPair:naturalPair(state)};
+  assert.equal(action.expectedPair.motherId,'dam');
+  assert.equal(applyBreedingAction(state,action,9).batches[0].motherId,'dam');
+  assert.throws(()=>applyBreedingAction(state,action,10),/亲虾已变动/);
+  assert.equal(state.batches.length,0);
+  const current=tick(state,10);
+  assert.equal(applyBreedingAction(current,{...action,expectedPair:naturalPair(current)},10).batches[0].motherId,'young');
+});
+
+test('满缸时一笔转让腾出整窝位置，重试、重复或受限名单不能部分成交',()=>{
+  const residents=Array.from({length:8},(_,i)=>shrimp('extra'+i,'female','breeding',{name:'青团',protected:i===7}));
+  const full=initial([...residents,shrimp('away','female','main')]);
+  const transfer=(s,ids)=>applyBreedingAction(s,{type:'sellGroup',tankId:'breeding',ids},s.now);
+  assert.throws(()=>plan(full,2));
+  for(const ids of [[],['extra0','extra0'],['extra0','extra7'],['extra0','away'],['extra0','missing']])
+    assert.throws(()=>transfer(full,ids));
+  const freed=transfer(full,['extra0','extra1']);
+  assert.equal(freed.cash,full.cash+16);
+  assert.equal(tankOccupancy(full,'breeding').animals,10);
+  assert.equal(tankOccupancy(freed,'breeding').animals,8);
+  assert.deepEqual(freed.individuals.filter(r=>r.soldAt!==null).map(r=>r.id),['extra0','extra1']);
+  assert.throws(()=>transfer(freed,['extra0','extra1']),/已转让/);
+  const planned=plan(freed,2);
+  assert.deepEqual(tankOccupancy(planned,'breeding'),{animals:8,reserved:2});
+  assert.throws(()=>transfer(planned,['extra2','father']),/活动亲虾/);
+  const hatched=tick(planned,HATCH);
+  assert.throws(()=>transfer(hatched,['extra2',hatched.batches[0].children[0].id]),/未成年/);
+  assert.equal(hatched.cash,freed.cash);
+});
+
+test('看图挑亲虾随成长和占用更新，收藏虾可选，静养和已售虾不可选',()=>{
+  const candidates=s=>s.individuals.filter(r=>canSelectParent(s,r)).map(r=>r.id);
+  const start=initial(), planned=plan(start,2);
+  assert.deepEqual(candidates(planned),[]);
+  assert.deepEqual(candidates(tick(planned,FORM)),['father']);
+  assert.deepEqual(candidates(tick(planned,HATCH)),['father']);
+  const grown=tick(planned,GROWTH);
+  assert.equal(candidates(grown).length,4);
+  const again=plan(grown,2), formed=tick(again,again.batches[1].formedAt);
+  assert.equal(activeParentBatch(again,'father'),again.batches[1]);
+  assert.equal(activeParentBatch(formed,'mother'),formed.batches[1]);
+  assert.equal(activeParentBatch(formed,'father'),undefined);
+  const mother=grown.individuals.find(r=>r.id==='mother');
+  assert.ok(canSelectParent(grown,{...mother,protected:true}));
+  for(const changes of [{tank:'rest'},{soldAt:GROWTH,tank:null},{legacy:true}])
+    assert.equal(canSelectParent(grown,{...mother,...changes}),false);
+});
+
+test('腾位明细随抱卵母虾迁移预留，孵化时从预留转入活体',()=>{
+  const formed=tick(plan(initial(),2),FORM);
+  assert.deepEqual(tankOccupancy(formed,'breeding'),{animals:2,reserved:2});
+  const moved=applyBreedingAction(formed,{type:'move',id:'mother',tankId:'main'},FORM);
+  assert.deepEqual(tankOccupancy(moved,'breeding'),{animals:1,reserved:0});
+  assert.deepEqual(tankOccupancy(moved,'main'),{animals:1,reserved:2});
+  assert.deepEqual(tankOccupancy(moved),{animals:2,reserved:2});
+  const grown=tick(moved,GROWTH);
+  assert.deepEqual(tankOccupancy(grown),{animals:4,reserved:0});
+  const sold=applyBreedingAction(grown,{type:'sell',id:'father'},GROWTH);
+  assert.deepEqual(tankOccupancy(sold),{animals:3,reserved:0});
+});
 
 test('confirming a plan moves both parents atomically and includes them in destination capacity',()=>{
   const founders=[shrimp('mother','female','main'),shrimp('father','male','main')];

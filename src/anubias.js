@@ -1,4 +1,5 @@
 import * as T from 'three';
+import {readAsset,readTexture} from './asset-read.js';
 
 /** Reuse the authored positions, normals and UVs; only the offline exporter changes units and attachment origin. */
 export function anubiasGeometry(pack, buffer) {
@@ -13,12 +14,11 @@ export function anubiasGeometry(pack, buffer) {
   return models;
 }
 
-export async function loadAnubias() {
-  const checked=r=>{if(!r.ok)throw new Error(`水榕素材读取失败：${r.url} (${r.status})`);return r;};
+export async function loadAnubias(signal) {
   const root='/assets/anubias/';
-  const [pack,buffer]=await Promise.all([fetch(root+'models.json').then(checked).then(r=>r.json()),fetch(root+'geometry.bin').then(checked).then(r=>r.arrayBuffer())]);
+  const [pack,buffer]=await Promise.all([readAsset(root+'models.json','json',false,signal,true),readAsset(root+'geometry.bin','arrayBuffer',false,signal,true)]);
   const loader=new T.TextureLoader(),maps=new Map();
   // Extracted glTF textures retain top-left UVs; FBX textures use the usual flipped upload.
-  for(const m of pack.materials)if(m.map&&!maps.has(m.map)){const t=await loader.loadAsync(root+m.map);t.flipY=m.flipY??true;t.colorSpace=T.SRGBColorSpace;t.anisotropy=4;maps.set(m.map,t);}
+  for(const m of pack.materials)if(m.map&&!maps.has(m.map)){const t=await readTexture(loader,root+m.map,signal,true);t.flipY=m.flipY??true;t.colorSpace=T.SRGBColorSpace;t.anisotropy=4;maps.set(m.map,t);}
   return {models:anubiasGeometry(pack,buffer),materials:pack.materials,maps};
 }

@@ -8,6 +8,9 @@ export const SPECIES = {
   moss: {label:FLORA_TRADE.moss.label, kind:'moss', start:12, max:40, perDay:0.7, host:true},
   pala: {label:FLORA_TRADE.pala.label, kind:'rosette', start:6, max:12, perDay:0.12, host:true},
   nullified: {label:FLORA_TRADE.nullified.label, kind:'rosette', start:6, max:12, perDay:0.12, host:true},
+  javafern: {label:FLORA_TRADE.javafern.label, kind:'fern', start:8, max:15, perDay:0.22, host:true},
+  vallisneria: {label:FLORA_TRADE.vallisneria.label, kind:'groundFan', start:8, max:14, perDay:0.45, host:false},
+  browncrypt: {label:FLORA_TRADE.browncrypt.label, kind:'groundFan', start:7, max:11, perDay:0.22, host:false},
 };
 export const FLORA_VARIANTS = 4;
 export const FLORA_LIMIT = 200;
@@ -32,18 +35,26 @@ export function visibleNodes(record) {
 export const visibleUpright = record => Math.floor((record.Upright ?? 1) * 12) / 12;
 
 export function growFlora(list, seconds, multiplier = 1) {
-  if (!Array.isArray(list) || !(seconds > 0)) return list;
-  const days = seconds / DAY * Math.max(0, multiplier);
-  for (const record of list) {
-    const spec = SPECIES[record.Species];
-    if (spec) record.Nodes = Math.min(spec.max, record.Nodes + spec.perDay * days);
-    if (spec?.kind === 'rosette') record.Upright = Math.min(1, (record.Upright ?? 1) + days / 3);
-  }
+  advanceFloraGrowth(list,seconds,multiplier);
   return list;
 }
 
+export function advanceFloraGrowth(list, seconds, multiplier = 1) {
+  if (!Array.isArray(list) || !(seconds > 0)) return false;
+  const days = seconds / DAY * Math.max(0, multiplier);
+  let changed=false;
+  for (const record of list) {
+    const spec = SPECIES[record.Species];
+    const nodes=visibleNodes(record), upright=visibleUpright(record);
+    if (spec) record.Nodes = Math.min(spec.max, record.Nodes + spec.perDay * days);
+    if (spec?.kind === 'rosette') record.Upright = Math.min(1, (record.Upright ?? 1) + days / 3);
+    changed ||= visibleNodes(record)!==nodes || visibleUpright(record)!==upright;
+  }
+  return changed;
+}
+
 /** Removes nodes from the growing end. `keep` is the node index the cut landed on for stems. */
-export function pruneFlora(record, keep = null) {
+export function pruneFlora(record, keep = null, simulationSeconds = 0) {
   const spec = SPECIES[record.Species];
   if (!spec) throw new Error('未知水草品种');
   const now = visibleNodes(record);
@@ -53,6 +64,7 @@ export function pruneFlora(record, keep = null) {
   else next = Math.max(Math.ceil(spec.start * 0.5), Math.floor(now * 0.6));
   if (next >= now) throw new Error('这株已经很短，先等它长一长');
   record.Nodes = next;
+  record.LastTrim = {At:simulationSeconds, Nodes:next};
   return record;
 }
 
@@ -67,6 +79,11 @@ export function sanitizeFlora(list) {
     ids.add(r.UniqueId);
     if (!Number.isInteger(r.Variant) || r.Variant < 0 || r.Variant >= FLORA_VARIANTS || !finite(r.Yaw, -1e6, 1e6) || !finite(r.Scale, 0.5, 1.6) || !finite(r.Hue, -1, 1) || !finite(r.Nodes, 0, spec.max)) throw new Error('程序化水草生长记录无效');
     const out = {UniqueId:r.UniqueId, Species:r.Species, Variant:r.Variant, Yaw:floraYaw(r.Yaw), Scale:r.Scale, Hue:r.Hue, Nodes:r.Nodes};
+    if (r.LastTrim !== undefined) {
+      const cut=r.LastTrim;
+      if (!finite(cut?.At,0,1e12) || !Number.isInteger(cut.Nodes) || !finite(cut.Nodes,1,spec.max)) throw new Error('水草修剪记录无效');
+      out.LastTrim={At:cut.At, Nodes:cut.Nodes};
+    }
     if (spec.kind === 'rosette') {
       const upright = r.Upright === undefined ? 1 : r.Upright;
       if (!finite(upright, 0, 1)) throw new Error('水榕向上生长记录无效');
@@ -98,6 +115,8 @@ export function parsePlantKind(value) {
 export function floraGap(species) {
   const spec = SPECIES[species];
   if (!spec) return 0.02;
+  if (spec.kind === 'fern') return .048;
+  if (spec.kind === 'groundFan') return 0.035;
   return spec.kind === 'carpet' ? 0.038 : spec.kind === 'moss' ? 0.028 : spec.kind === 'rosette' ? 0.055 : 0.014;
 }
 
@@ -134,72 +153,4 @@ export function makeFloraRecord({id, species, variant, x, z, host, local, normal
   if (spec.host) Object.assign(record, {Host:host, Local:local, Normal:normal});
   else Object.assign(record, {X:x, Z:z});
   return sanitizeFlora([record])[0];
-}
-
-function random(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function base(rand, tankId, species, index) {
-  const n = Math.max(1, catalogVariantCount(species) || FLORA_VARIANTS);
-  return {UniqueId:`${tankId}-${species}-${index}`, Species:species, Variant:Math.floor(rand() * n), Yaw:(rand() * 2 - 1) * Math.PI, Scale:0.85 + rand() * 0.3, Hue:rand() * 2 - 1};
-}
-
-/**
- * Plans the default procedural plants for a tank.
- * probe(x, z) casts straight down in Unity space and returns {y, kind, owner, normal:[x,y,z]} or null.
- * Epiphytes come back with World/WorldNormal; the caller converts them into host-local coordinates.
- */
-export function planFlora(tankId, probe, plants = []) {
-  const rand = random(stableSeed(String(tankId) + ':flora'));
-  const clear = (x, z, gap) => plants.every(p => Math.hypot(p.x - x, p.z - z) >= gap);
-  const ground = (x, z, gap) => {
-    const hit = probe(x, z);
-    return hit && hit.kind === 0 && hit.normal[1] > 0.6 && clear(x, z, gap) ? hit : null;
-  };
-  const out = [];
-  let bunches = 0;
-  for (const [cx, cz] of [[0.44, 0.17], [-0.08, 0.21], [0.24, 0.2], [-0.44, 0.18]]) {
-    if (bunches >= 2 || !ground(cx, cz, 0.02)) continue;
-    bunches++;
-    for (let i = 0; i < 9; i++) {
-      const angle = i * 2.39996, radius = 0.0095 * Math.sqrt(i + 0.6), x = cx + Math.cos(angle) * radius, z = cz + Math.sin(angle) * radius;
-      if (!ground(x, z, 0.012)) continue;
-      out.push({...base(rand, tankId, 'rotala', out.length), X:x, Z:z, Nodes:SPECIES.rotala.start + Math.floor(rand() * 6)});
-    }
-  }
-  let patches = 0;
-  for (let x = -0.46; x <= 0.47 && patches < 8; x += 0.095) {
-    const z = -0.205 + (rand() - 0.5) * 0.06;
-    if (!ground(x, z, 0.03)) continue;
-    patches++;
-    out.push({...base(rand, tankId, 'carpet', out.length), X:x, Z:z, Nodes:SPECIES.carpet.start + Math.floor(rand() * 30)});
-  }
-  const perches = [];
-  for (let x = -0.55; x <= 0.55; x += 0.02) for (let z = -0.26; z <= 0.26; z += 0.02) {
-    const hit = probe(x, z);
-    if (hit && (hit.kind === 1 || hit.kind === 2) && hit.normal[1] > 0.35 && hit.y < 0.5) perches.push({x, z, ...hit});
-  }
-  const taken = [];
-  const pick = (filter, count, gap, make) => {
-    const pool = perches.filter(filter);
-    for (let tries = 0; tries < pool.length * 2 && count > 0; tries++) {
-      const p = pool[Math.floor(rand() * pool.length)];
-      if (!p || taken.some(t => Math.hypot(t.x - p.x, t.z - p.z, t.y - p.y) < gap)) continue;
-      taken.push(p);
-      out.push(make(p));
-      count--;
-    }
-  };
-  perches.sort((a, b) => a.z - b.z);
-  for(const species of ['pala','nullified']) pick(p => (p.kind === 2 || p.kind === 1) && p.normal[1] > 0.6 && p.z < perches[Math.floor(perches.length * 0.45)]?.z, 1, 0.12, p => ({...base(rand, tankId, species, out.length), Nodes:SPECIES[species].start, Host:p.owner, World:[p.x, p.y, p.z], WorldNormal:p.normal}));
-  pick(p => p.kind === 2, 7, 0.05, p => ({...base(rand, tankId, 'moss', out.length), Nodes:SPECIES.moss.start + Math.floor(rand() * 12), Host:p.owner, World:[p.x, p.y, p.z], WorldNormal:p.normal}));
-  return out;
 }

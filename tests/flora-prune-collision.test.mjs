@@ -24,6 +24,40 @@ function tris(item) {
   return item.geometry.index ? item.geometry.index.count / 3 : item.geometry.attributes.position.count / 3;
 }
 
+test('background flora generation retains collider order, samples and triangle data', async t => {
+  const {flora, scene} = anubiasView();
+  const common = {Yaw:.2, Scale:1, Hue:0, Nodes:24};
+  const list = [
+    {...common, UniqueId:'red', Species:'rotala', Variant:1, X:-.1, Z:0},
+    {...common, UniqueId:'green', Species:'rotala', Variant:0, X:.1, Z:0},
+    {...common, UniqueId:'wood-moss', Species:'moss', Variant:2, Host:'wood', Local:[0,.02,0], Normal:[0,1,0]},
+    {...common, UniqueId:'anubias', Species:'nullified', Variant:0, Host:'wood', Local:[.1,.01,0], Normal:[0,1,0]},
+  ];
+  const plain = flora.collisionItems(list, scene);
+  let pauses = 0;
+  const background = await flora.collisionItems(list, scene, () => {
+    pauses++;
+    return new Promise(resolve => setImmediate(resolve));
+  });
+  assert.ok(pauses > list.length * 2);
+  const data = items => items.map(({node, geometry, samples}) => ({
+    node, samples, index:geometry.index.array,
+    attributes:Object.fromEntries(Object.entries(geometry.attributes).map(([key, attribute]) => [key, attribute.array])),
+  }));
+  assert.deepEqual(data(background), data(plain));
+  for (const item of [...plain, ...background]) item.geometry.dispose();
+
+  const disposed = t.mock.method(T.BufferGeometry.prototype, 'dispose');
+  const abort = new DOMException('wallpaper paused', 'AbortError');
+  pauses = 0;
+  await assert.rejects(flora.collisionItems(list, scene, () => {
+    if (++pauses === list.length + 3) return Promise.reject(abort);
+  }), error => error === abort);
+  assert.ok(disposed.mock.calls.length >= 16);
+  const templates = new Set(Object.values(flora.units).flat());
+  assert.ok(disposed.mock.calls.every(call => !templates.has(call.this)));
+});
+
 test('pruning Anubias drops hidden leaves from collider, picking and shadow mesh', () => {
   const {flora, scene} = anubiasView();
   const r = {UniqueId:'n1', Species:'nullified', Variant:0, Yaw:0.2, Scale:1, Hue:0, Nodes:8, Host:'wood', Local:[0, 0.01, 0], Normal:[0, 1, 0], Upright:1};
@@ -62,6 +96,29 @@ test('pruning Anubias drops hidden leaves from collider, picking and shadow mesh
     assert.ok(flora.owner(hit));
   }
   cut.geometry.dispose();
+});
+
+test('剪去前株水榕的叶片后，同一个落点能直接选中后株',()=>{
+  const {flora,scene}=anubiasView();
+  const front={UniqueId:'near',Species:'nullified',Variant:0,Yaw:0,Scale:1,Hue:0,Nodes:8,Host:'wood',Local:[0,.22,0],Normal:[0,1,0],Upright:1};
+  const back={...front,UniqueId:'far',Local:[0,.08,0]};
+  const pair=[front,back], ray=new T.Raycaster(), points=[];
+  flora.build(pair,scene);
+  const meshes=[...flora.meshes.values()].map(m=>m.mesh);
+  const bounds=new T.Box3().setFromObject(flora.root);
+  function first(point){
+    ray.set(point,new T.Vector3(0,-1,0));
+    return flora.owner(ray.intersectObjects(meshes,false)[0])?.id;
+  }
+  for(let x=1;x<12;x++)for(let z=1;z<12;z++){
+    const p=new T.Vector3().lerpVectors(bounds.min,bounds.max,x/12);
+    p.y=bounds.max.y+.01;p.z=T.MathUtils.lerp(bounds.min.z,bounds.max.z,z/12);
+    if(first(p)===front.UniqueId)points.push(p);
+  }
+  pruneFlora(front);
+  flora.build(pair,scene);
+  assert.ok(points.some(p=>first(p)===back.UniqueId),'至少一处剪口实际命中后株');
+  assert.ok(points.some(p=>first(p)===front.UniqueId),'留下的叶片仍可选中');
 });
 
 test('pruning Bacopa drops stem and leaf triangles from the collider', () => {

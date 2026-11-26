@@ -1,19 +1,162 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>水草缸 · Three.js</title><link rel="icon" href="data:,"></head>
-<body><canvas id="tank" aria-label="可旋转和缩放的三维水草缸"></canvas>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>水草缸 · Three.js</title><link rel="icon" href="data:,">
+<style>
+.wallpaper-boot body { margin:0;background:#f8f2ea;color:#514638;font:16px system-ui;cursor:none }
+.wallpaper-boot body > :not(#loading) { display:none!important }
+.wallpaper-boot #loading { position:fixed;inset:0;display:grid;align-content:center;text-align:center }
+.wallpaper-boot #loading:has(img) { isolation:isolate;align-content:end;justify-items:center;padding-bottom:1em }
+.wallpaper-boot #loading img { position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:-1 }
+.wallpaper-boot #loading:has(img) strong { display:none }
+.wallpaper-boot #loading:has(img) p { padding:.5em 1em;background:#fff8ec;border-radius:.6em }
+</style>
+<script>
+// This must run before the module graph loads, including when the local service stops mid-load.
+if (window.parent!==window && new URLSearchParams(location.search).get('aq-launcher')==='check') {
+  // The launcher only needs this document's HTML, not a second WebGL context.
+  window.parent.postMessage('aquarium-wallpaper-shell','*');
+  window.stop();
+} else if (new URLSearchParams(location.search).has('wallpaper')) {
+  document.documentElement.classList.add('wallpaper-boot');
+  const validRate=value=>Number.isFinite(value) && value>=1;
+  const savedRate=globalThis.history?.state?.aquariumWallpaperFps;
+  let fps=validRate(savedRate) ? savedRate : Number(new URLSearchParams(location.search).get('aq-fps'));
+  let paused=false, playback, failed=false, timer, check, started=false;
+  function cancelCheck() {
+    check?.abort();
+    check=null;
+  }
+  function schedule(immediate=false) {
+    clearTimeout(timer);
+    if (started || check || paused || document.hidden) return;
+    const reloading=performance.getEntriesByType('navigation')[0]?.type==='reload';
+    // A stalled module request can keep its connection open without dispatching an error.
+    timer=failed ? setTimeout(reconnect,immediate ? 0 : reloading ? 30000 : 4000) :
+      setTimeout(()=>retryStartup('壁纸程序载入时间较长，正在重新连接本机鱼缸…'),reloading ? 90000 : 45000);
+  }
+  async function reconnect() {
+    const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),5000);
+    check=controller;
+    try {
+      const response=await fetch('/api/wallpaper/health',{cache:'no-store',signal:controller.signal});
+      if (response.ok && (await response.json()).service==='three-aquarium-wallpaper' && !controller.signal.aborted && failed && !paused && !document.hidden) {
+        location.reload();
+        return;
+      }
+    } catch { /* The local service may still be starting. */ }
+    finally { clearTimeout(timeout); }
+    if(check!==controller)return;
+    check=null;
+    schedule();
+  }
+  function retryStartup(message) {
+    failed=true;
+    const status=document.getElementById('progress');
+    if(status)status.textContent=message;
+    schedule();
+  }
+  function moduleError(event) {
+    const script=event.target;
+    if (!script.matches?.('script[type="module"][src]') || new URL(script.src).pathname==='/@vite/client') return;
+    retryStartup('壁纸程序尚未载入，正在等待本机服务恢复…');
+  }
+  window.addEventListener('error',moduleError,true);
+  function resumeCheck(){
+    if(paused || document.hidden)cancelCheck();
+    schedule(true);
+  }
+  document.addEventListener('visibilitychange',resumeCheck);
+  window.wallpaperPropertyListener={
+    retryStartup,
+    setPaused(value){if(typeof value==='boolean' && value!==paused){paused=value;resumeCheck();}},
+    applyGeneralProperties(settings){
+      if(!validRate(settings?.fps))return;
+      fps=settings.fps;
+      try{if(history.state?.aquariumWallpaperFps!==fps)history.replaceState({...history.state,aquariumWallpaperFps:fps},'');}catch{}
+      playback?.applyGeneralProperties(settings);
+    },
+    startPlayback(player){
+      playback=player;
+      started=true;
+      failed=false;
+      cancelCheck();
+      clearTimeout(timer);
+      window.removeEventListener('error',moduleError,true);
+      document.removeEventListener('visibilitychange',resumeCheck);
+      document.documentElement.classList.remove('wallpaper-boot');
+      playback.setPaused(paused);
+      if(validRate(fps))playback.applyGeneralProperties({fps});
+    },
+  };
+  schedule();
+}
+</script>
+</head><body><canvas id="tank" aria-label="可旋转和缩放的三维水草缸"></canvas>
+<dialog id="wallpaper-framing" aria-labelledby="wallpaper-framing-title"><strong id="wallpaper-framing-title"></strong><div id="wallpaper-framing-controls"><button id="wallpaper-framing-return" type="button" autofocus>返回观察</button><button type="button" id="wallpaper-framing-pause" aria-pressed="false">定格画面</button><button type="button" id="wallpaper-hide-tools">只看缸景 · 点画面恢复</button><button type="button" id="wallpaper-framing-fullscreen" hidden>全屏看缸</button><select id="wallpaper-framing-format" aria-label="预看和导出的画面比例"><option value="screen">跟随屏幕</option><option value="wide">横屏 16:9</option><option value="ultrawide">宽屏 21:9</option><option value="portrait">竖屏 9:16</option></select><label class="wallpaper-room-choice"><input id="wallpaper-framing-room" type="checkbox">整组缸远景（横屏）</label></div><small id="wallpaper-framing-note" role="status"></small><button id="wallpaper-reveal-tools" type="button" aria-label="显示壁纸工具" hidden></button></dialog>
 <button id="panel-toggle" type="button" aria-expanded="true" aria-controls="side-panel" title="把操作栏让开，鱼缸看得更完整">收起</button>
-<button id="quiet-exit" type="button" title="快捷键 H，或按 Esc">结束静观</button>
+<div id="quiet-controls"><button id="quiet-next-sibling" type="button" hidden>看同窝下一只</button><button id="quiet-wallpaper" type="button" aria-haspopup="dialog" title="欣赏整缸远景，按 Esc 回到静观">看整缸壁纸</button><button id="quiet-exit" type="button" title="快捷键 H，或按 Esc">结束静观</button></div>
 <header><div><strong>水草缸</strong><span class="badge">Three.js 迁移版</span></div><p id="setup-chip"></p><p id="status" role="status">正在读取原游戏资产…</p><button id="care-chip" type="button" aria-expanded="false" aria-controls="care-pop">正在了解虾群…</button><p id="stats"></p></header>
-<div id="care-pop" hidden><p id="care" role="status">正在了解虾群…</p><div id="favorites"></div><button id="show-stars" type="button" aria-pressed="false" title="平时星标藏着，打开后在缸里一直能看见">显示收藏星标</button><p id="journal"></p></div>
+<div id="care-pop" hidden><details id="care-needs" hidden><summary></summary><div id="care-individuals"></div></details><p id="care" role="status">正在了解虾群…</p><div id="favorites"></div><button id="show-stars" type="button" aria-pressed="false" title="平时星标藏着，打开后在缸里一直能看见">显示收藏星标</button><p id="journal"></p></div>
 <div id="shrimp-card" hidden><h2 id="selection">整缸观察</h2><label>名字<input id="shrimp-name" maxlength="16" autocomplete="off" placeholder="比如：小红" title="最多 16 个字，可以用中文"></label><div class="pair"><button id="shrimp-fav" type="button" aria-pressed="false" title="标成收藏，方便再找到">收藏</button><button id="shrimp-follow" type="button" title="镜头跟着这一只">跟随这只</button></div><p id="shrimp-detail"></p></div>
 <div id="loading"><strong>正在迁入你的鱼缸</strong><p id="progress">读取场景</p></div>
+<script>
+if (new URLSearchParams(location.search).has('wallpaper')) {
+  const valid=jpeg=>typeof jpeg==='string' && jpeg.length<=90000 && /^\/9j\/[A-Za-z0-9+/]*={0,2}$/.test(jpeg);
+  let jpeg=history.state?.aquariumWallpaperJpeg;
+  const prefix='#aq-preview=';
+  if(location.hash?.startsWith(prefix)){
+    const still=location.hash.slice(prefix.length);
+    const incoming=valid(still);
+    if(incoming)jpeg=still;
+    // The fragment carries only a local still across the file-to-player navigation.
+    try{history.replaceState({...history.state,aquariumWallpaperJpeg:jpeg,aquariumWallpaperTag:incoming?null:history.state?.aquariumWallpaperTag},'',location.pathname+location.search);}catch{}
+  }
+  if(valid(jpeg)){
+    const image=new Image();
+    image.alt='上次播放的整缸留影';
+    image.onerror=()=>image.remove();
+    image.src='data:image/jpeg;base64,'+jpeg;
+    document.getElementById('loading').prepend(image);
+  }
+}
+</script>
 <aside id="side-panel">
 <div id="dock-popover" hidden>
-<section class="dock-col" id="col-observe" data-dock="observe" hidden><div class="pair"><button id="pause" type="button" aria-pressed="false" title="暂停或继续模拟">暂停模拟</button></div><button id="persist-mark" type="button" aria-pressed="false" title="默认选中时轮廓光闪一下就淡掉；打开后选中的虾一直留一圈淡光">选中后一直留轮廓</button><label>行为模式<select id="action" title="用来检查动作。选中后虾会停在原地"><option value="Auto">自主行为</option><option value="Rest">休息</option><option value="Walk">步足动作</option><option value="Graze">摄食</option><option value="Groom">清洁</option><option value="RoutineSwim">游泳动作</option><option value="EscapeSwim">弹尾</option></select></label><p class="hint" id="observe-hint">R 复位 · V 俯视 · H 静观 · Esc 取消</p></section>
+<section class="dock-col" id="col-observe" data-dock="observe" hidden>
+<div id="wallpaper-shortcuts"><div class="pair"><button id="wallpaper-sync" type="button" hidden>同步到实时壁纸</button><a id="wallpaper-live-open" href="/?wallpaper" target="_blank" rel="noopener" hidden>预览已同步的壁纸</a></div><small id="wallpaper-live-hint" role="status"></small></div>
+<div class="pair"><button id="pause" type="button" aria-pressed="false" title="暂停或继续模拟">暂停模拟</button></div><button id="persist-mark" type="button" aria-pressed="false" title="默认选中时轮廓光闪一下就淡掉；打开后选中的虾一直留一圈淡光">选中后一直留轮廓</button><details id="watch-activities"><summary>找一只虾</summary><label>按名字找本缸的虾<select id="observe-resident"></select></label><div id="activity-choices"></div><small id="activity-caption"></small><button id="observe-resident-quiet" type="button" hidden>静观看这只虾</button></details><label id="animation-inspection" hidden>动作检查<select id="action" title="用来检查动作。选中后虾会停在原地"><option value="Auto">自主行为</option><option value="Rest">休息</option><option value="Walk">步足动作</option><option value="Graze">摄食</option><option value="Groom">清洁</option><option value="RoutineSwim">游泳动作</option><option value="EscapeSwim">弹尾</option></select></label><button id="quiet-long" type="button" title="持续观察这口缸，按 Esc 或 H 返回">长时间静观</button><button id="quiet-fullscreen" type="button" hidden>全屏静观</button><div id="wallpaper-actions">
+<small id="wallpaper-live-receipt" role="status" hidden></small>
+<button id="wallpaper-visit-room" type="button" hidden></button>
+<button id="wallpaper-update-room" type="button" hidden></button>
+<button id="wallpaper-brood-journal" type="button" hidden>看这一窝的手记</button>
+<details id="wallpaper-desktop-setup"><summary>在 Wallpaper Engine 中打开</summary>
+<p class="wallpaper-first-sync">先点「同步到实时壁纸」，这里会显示这台电脑的壁纸地址。</p>
+<div class="wallpaper-open-file">
+<button id="wallpaper-preview-window" type="button" hidden>在 Wallpaper Engine 窗口试播</button>
+<label hidden>目标屏幕（按 Wallpaper Engine 顺序，从 1 开始）<input id="wallpaper-screen" type="number" min="1" max="2147483647" step="1" value="1" required></label>
+<button id="wallpaper-apply" type="button" hidden>设为第一屏壁纸</button>
+<label for="wallpaper-address">本机壁纸地址</label>
+<div class="wallpaper-address-row"><input id="wallpaper-address" readonly type="url"><button type="button" id="wallpaper-address-copy">复制地址</button></div>
+<small id="wallpaper-address-status" role="status"></small>
+<p>在 Wallpaper Engine 选「打开壁纸 → 从 URL 打开」，粘贴地址。以后换缸只需在游戏里再次同步。</p>
+<p>想在开机时等候鱼缸服务，可以下载 HTML 入口，在「打开壁纸 → 打开离线壁纸（动态）」中选它。</p>
+<a id="wallpaper-live-file" download="aquarium-live.html" hidden>下载 Wallpaper Engine 入口</a>
+</div>
+<p>游戏标签可以关闭。想让鱼缸服务随 Windows 登录启动，双击项目里的「设置壁纸自启.cmd」；也可用「启动实时壁纸.cmd」手动启动。</p>
+</details>
+<details id="wallpaper-compare"><summary>对照上次同步的缸景</summary><p id="wallpaper-current-tank"></p>
+<div class="wallpaper-comparison">
+<figure><figcaption id="wallpaper-synced-caption">上次同步</figcaption><img id="wallpaper-preview" alt="上次同步时的整缸远景" hidden><small>这份副本没有可显示的留影</small></figure>
+<figure><figcaption id="wallpaper-local-caption" role="status">本次取景</figcaption><img id="wallpaper-local-preview" alt="本次对照拍下的整缸远景" hidden></figure>
+</div><button id="wallpaper-compare-retake" type="button">重拍本缸对照图</button></details>
+<details id="wallpaper-export"><summary>保存图片或视频</summary><button id="wallpaper-still" type="button" title="按壁纸预看所选比例保存；录制期间使用视频尺寸">保存整缸图片（PNG）</button>
+<a id="wallpaper-still-download" download hidden>下载上次留影</a>
+<button id="wallpaper-record" type="button">录制整缸视频（MP4）</button><button id="wallpaper-discard" type="button" hidden>放弃本次录制</button><small id="wallpaper-hint" role="status">默认跟随屏幕比例，最多 30 秒，无声。</small><a id="wallpaper-download" download="aquarium-wallpaper.mp4" hidden>保存壁纸 MP4</a></details></div><p class="hint" id="observe-hint">R 复位 · V 俯视 · H 静观 · Esc 取消</p></section>
 <section class="dock-col" id="col-scene" data-dock="scene" hidden><details id="plant-panel"><summary>水草位置</summary><button id="edit-plants" aria-pressed="false">调整水草</button><div id="plant-controls" hidden><label>选择水草<select id="plant-choice"></select></label><p>点击草选取 · Q / E 旋转<br>调整期间暂停模拟</p><button id="plant-move">移动到新位置</button><div class="pair"><button id="plant-left">左转 15°</button><button id="plant-right">右转 15°</button></div><div class="pair"><button id="plant-undo" disabled title="撤销上一次移动">撤销</button><button id="plant-redo" disabled>重做</button></div></div></details></section>
 <section class="dock-col" id="col-keep" data-dock="keep" hidden><button id="save" type="button" title="立刻写入这台浏览器">保存进度</button><button id="export" type="button" title="下载 v4 进度文件">导出进度</button><label class="import">导入进度<input id="import" type="file" accept="application/json,.json" title="读入之前导出的进度"></label><small>完整造景、生长和虾群都在这份进度里。大约每 15 秒自动保存。原来的 Unity 存档不会被改动。</small></section>
 </div>
 <div id="dock-bar">
+<button id="wallpaper-framing-open" type="button" aria-haspopup="dialog" aria-controls="wallpaper-framing" title="预看本缸的桌面壁纸" hidden>壁纸</button>
+<a id="wallpaper-build-open" href="/?wallpaper" target="_blank" rel="noopener" aria-label="在新标签页看上次同步的壁纸">看上次的壁纸 ↗</a>
 <button type="button" data-dock="observe" aria-expanded="false" aria-controls="dock-popover">观察</button>
 <button type="button" data-dock="scene" aria-expanded="false" aria-controls="dock-popover">造景</button>
 <button type="button" data-dock="keep" aria-expanded="false" aria-controls="dock-popover">存档</button>
@@ -23,6 +166,12 @@
 <button id="reset" type="button" title="快捷键 R，回到整缸">返回整缸</button>
 </div>
 </aside>
-<div id="welcome" class="welcome" hidden role="dialog" aria-labelledby="welcome-title"><p id="welcome-title">先看一眼这缸虾</p><p>拖动可以转着看，滚轮拉近。点一只虾，可以给它起名、标成收藏。它们平时自己吃草叶和沉木上的生物膜，加餐只是偶尔加一餐。</p><button id="welcome-dismiss" type="button">知道了，开始看</button></div>
+<section id="welcome" class="welcome" hidden aria-labelledby="welcome-title">
+  <div class="welcome-plate"><img src="/assets/thumbnails/crystal-study.png" width="384" height="224" alt="红白条纹水晶虾侧面" loading="lazy"></div>
+  <h2 id="welcome-title">窗边的溪湾</h2>
+  <p>浅沙和沉木间住着一群樱花虾。接手这口缸，就能改造这片景，也可以迎来第一批水晶虾。</p>
+  <div class="welcome-actions"><button id="welcome-dismiss" type="button">接手这口缸</button><button id="welcome-empty" type="button">从空缸造景</button></div>
+</section>
 <footer><span id="message" role="status"></span></footer>
+<svg width="0" height="0" style="position:absolute;pointer-events:none" aria-hidden="true"><defs><filter id="crystal-pencil" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceGraphic" stdDeviation="0.85"/><feColorMatrix type="luminanceToAlpha"/><feComponentTransfer><feFuncA type="linear" slope="4" intercept="-2"/></feComponentTransfer><feComposite in2="SourceAlpha" operator="in" result="shellLight"/><feGaussianBlur in="SourceAlpha" stdDeviation="1.3"/><feComponentTransfer><feFuncA type="linear" slope="5" intercept="-2.7"/></feComponentTransfer><feComposite in2="shellLight" operator="in"/><feMorphology operator="dilate" radius="1.4"/><feGaussianBlur stdDeviation=".42" result="rim"/><feFlood flood-color="#766555" flood-opacity=".82"/><feComposite in2="rim" operator="in"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs></svg>
 <script type="module" src="/src/main.js"></script></body></html>

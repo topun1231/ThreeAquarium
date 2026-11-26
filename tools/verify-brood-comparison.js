@@ -1,0 +1,196 @@
+async page => {
+  // Run against 5174 in an empty Playwright storage context. Clock jumps and sales are fixture setup.
+  const check=(ok,message)=>{if(!ok)throw Error(message);};
+  const control=id=>page.locator('#crystal-'+id);
+  const act=action=>page.evaluate(action=>aquarium.game.crystalAction(action),action);
+  const state=()=>page.evaluate(()=>aquarium.game.data.Breeding);
+  const openJournal=async()=>{
+    await control('open').click();await control('tab-breed').click();
+  };
+  const reviewOf=id=>page.locator('[data-batch-id="'+id+'"] > .crystal-review');
+  const details=async(id)=>{
+    const review=reviewOf(id);
+    if(!await review.evaluate(el=>el.open))await review.locator(':scope > summary').click();
+    return review;
+  };
+  const plan=(motherId,fatherId,size)=>act({type:'plan',motherId,fatherId,tankId:'main',size,qualityGoal:'coverage'});
+  const finish=async()=>{
+    const last=(await state()).batches.at(-1);
+    await page.clock.setFixedTime(new Date(last.adultAt+2000));
+    await act({type:'advance'});
+    return (await state()).batches.at(-1);
+  };
+  const sell=ids=>act({type:'sellGroup',tankId:'main',ids});
+  const children=brood=>brood.children.map(k=>k.id);
+  await page.locator('#welcome-dismiss').click();
+  await control('open').click();await control('start').click();await control('panel').waitFor({state:'hidden'});
+  await plan('I4','I2',2);
+  const first=await finish(), [archived,favorite]=children(first);
+  await act({type:'rename',id:archived,name:'白石'});
+  const archiveNote='头边的色块向后收';
+  await act({type:'observation',id:archived,value:archiveNote});
+  await act({type:'rename',id:favorite,name:'砂糖'});
+  await act({type:'protect',id:favorite,value:true});
+  await sell([archived]);
+  await openJournal();
+  const past=control('past-offspring');
+  await control('mother').selectOption('I4');
+  await control('father').selectOption('I3');
+  check(!await past.isVisible(),'A new pair was shown somebody else’s children');
+  await control('father').selectOption('I2');
+  await control('quality-goal').selectOption('edge');
+  await control('brood-goal').selectOption('red:mosura');
+  await past.press('Enter');
+  const firstReview=reviewOf(first.id);
+  check(await firstReview.locator(':scope > summary').evaluate(el=>el===document.activeElement),'The pairing draft did not open its single prior litter');
+  check(await firstReview.locator('.crystal-pair-history').count()===0,'A single litter offered a comparison');
+  await control('brood-return').press('Enter');
+  check(await past.evaluate(el=>el===document.activeElement) && await control('mother').inputValue()==='I4' &&
+    await control('father').inputValue()==='I2' && await control('quality-goal').inputValue()==='edge' &&
+    await control('brood-goal').inputValue()==='red:mosura','Looking up a litter changed the draft or lost focus');
+  await control('panel').getByRole('button',{name:'回到缸边',exact:true}).click();
+
+  await plan('I4','I3',2);const otherSire=await finish();await sell(children(otherSire));
+  await plan('I1','I2',2);const otherDam=await finish();await sell(children(otherDam));
+  await sell(['I5','I6','I7']);
+  await plan('I4','I2',4);
+  const middle=await finish();
+  await sell(children(middle).slice(0,3));
+  await openJournal();
+  await control('mother').selectOption('I4');await control('father').selectOption('I2');
+  const middleReview=reviewOf(middle.id);
+  const twoLitters=middleReview.locator('.crystal-pair-history');
+  await past.press('Enter');
+  await twoLitters.locator('[data-portrait-brood="'+first.id+'"]').waitFor();
+  check(!await twoLitters.locator('select').isVisible(),'Two litters required an unnecessary selection');
+  await control('brood-return').press('Enter');
+  check(await past.evaluate(el=>el===document.activeElement),'Could not return from two litters to the current pair');
+  await twoLitters.locator(':scope > summary').press('Enter');
+  await middleReview.getByRole('button',{name:'沿用这对',exact:true}).click();
+  check(await control('mother').inputValue()==='I4' && await control('father').inputValue()==='I2','Repeating chose different parents');
+  await control('brood-size').selectOption('2');
+  await control('plan').click();
+  await page.waitForFunction(()=>aquarium.game.data.Breeding.batches.length===5);
+  const latest=await finish();
+  await plan('I4','I2',2);await act({type:'cancel',batchId:(await state()).batches.at(-1).id});
+  await plan('I4','I2',2);
+  const pending=(await state()).batches.at(-1);
+  await page.clock.setFixedTime(new Date(pending.hatchAt+2000));
+  await act({type:'advance'});
+  check((await state()).batches.at(-1).status==='hatched','Missing juvenile exclusion fixture');
+  const damNote='想看看这片白盖在两窝里是什么样。';
+  await act({type:'observation',id:'I4',value:damNote});
+  for(const id of ['I2','I3'])await act({type:'rename',id,name:'暮石'});
+  const stable=JSON.stringify(await state());
+  const review=await details(latest.id), history=review.locator('.crystal-pair-history');
+  const heading=history.locator(':scope > summary'), picker=history.locator('select'), spread=history.locator('.crystal-pair-spread');
+  const right=spread.locator('[data-portrait-brood]').last();
+  const cardIds=pane=>pane.locator('[data-pair-child]').evaluateAll(cards=>cards.map(el=>el.dataset.pairChild));
+  check(await spread.locator('img').count()===0,'Closed comparison scheduled portraits');
+  await heading.press('Enter');
+  await spread.locator('[data-pair-child]').first().waitFor();
+  check(await picker.inputValue()===middle.id,'Default comparison missed the previous completed litter of this pair');
+  check(String(await picker.locator('option').evaluateAll(options=>options.map(o=>o.value)))===String([middle.id,first.id]),'History includes another pair or an unfinished/cancelled litter');
+  check(String(await cardIds(spread.locator('[data-portrait-brood]').first()))===String(children(latest)) && String(await cardIds(right))===String(children(middle)),'Contact sheets lost birth order or a sibling');
+  check(!/达标|最高|超过|\d+\s*分/.test(await history.innerText()),'Scores were visible before asking');
+  const analysis=history.locator('.crystal-pair-results');
+  await analysis.locator('summary').press('Enter');
+  await analysis.getByText(/覆盖最高/).first().waitFor();
+  check((await analysis.innerText()).includes('最高') && (await analysis.innerText()).includes('覆盖'),'Optional history lost its numerical results');
+  await analysis.locator('summary').press('Enter');
+  await page.setViewportSize({width:390,height:750});
+  await picker.selectOption(first.id);
+  await page.waitForFunction(id=>document.querySelector('.crystal-pair-spread [data-portrait-brood]:last-child')?.dataset.portraitBrood===id,first.id);
+  check(String(await cardIds(right))===String(children(first)),'Switching litters picked the wrong animals');
+  await history.locator('img').last().waitFor({state:'visible'});
+  check(await spread.evaluate(el=>{
+    const [a,b]=[...el.children].map(p=>p.getBoundingClientRect());
+    return Math.abs(a.top-b.top)<2 && a.right<=b.left && b.right<=innerWidth && el.scrollWidth<=el.clientWidth+1;
+  }),'Phone contact sheets overlap or require horizontal scrolling');
+  const archivedCard=right.locator('[data-pair-child="'+archived+'"]');
+  check((await archivedCard.innerText()).includes(archiveNote) && await spread.locator('.crystal-keeper-note').count()===1,'The keeper’s note was lost or copied across litter photos');
+  check((await archivedCard.innerText()).includes('白石') && (await archivedCard.innerText()).includes('已转让'),'Archived child lost identity or status');
+  check((await right.locator('[data-pair-child="'+favorite+'"]').innerText()).includes('已收藏'),'A player favourite was not recognisable');
+  const originalPicture=await archivedCard.locator('img').getAttribute('src');
+  const currentId=children(latest)[0], currentCard=spread.locator('[data-pair-child="'+currentId+'"]');
+  await currentCard.press('Enter');
+  check(await review.locator('[data-brood-locate="'+currentId+'"]').evaluate(el=>el===document.activeElement),'Current brood photo did not open that individual');
+  await control('lineage-back').press('Enter');
+  check(await currentCard.evaluate(el=>el===document.activeElement),'Could not return to the current brood photo');
+  await archivedCard.press('Enter');
+  const archivedLink=firstReview.locator('[data-brood-locate="'+archived+'"]');
+  check(await archivedLink.evaluate(el=>el===document.activeElement) && (await archivedLink.innerText()).includes('已售档案'),'A portrait did not open the archived individual');
+  const actual=archivedLink.locator('xpath=ancestor::section[contains(@class,"crystal-child")][1]//img');
+  await actual.waitFor({state:'visible'});
+  check(originalPicture===await actual.getAttribute('src'),'Archived image belongs to a different individual');
+  await control('lineage-back').press('Enter');
+  check(await picker.inputValue()===first.id && await archivedCard.evaluate(el=>el===document.activeElement),'Returning lost the original litter or the focused photo');
+  check(JSON.stringify(await state())===stable,'Comparing litters changed a saved animal or breeding result');
+  await page.reload();await page.waitForFunction(()=>window.aquarium?.ready);await openJournal();
+  await control('resume-comparison').click();
+  check(await history.evaluate(el=>el.open) && await picker.inputValue()===first.id &&
+    await archivedCard.evaluate(el=>el===document.activeElement),'Reopening the journal forgot the chosen comparison or individual');
+  await heading.press('Enter');
+  await page.waitForFunction(()=>!document.querySelector('.crystal-pair-spread img'));
+
+  const family=control('family'), familySpread=control('family-spread'), base=control('parent-broods'), peer=control('family-peer');
+  const pages=familySpread.locator('[data-portrait-brood]');
+  async function openFamily(id,filter='live'){
+    await control('tab-roster').click();await control('roster-filter').selectOption(filter);await control('search').fill('');
+    await control('roster').locator('[data-individual-id="'+id+'"]').click();
+    if(!await family.evaluate(el=>el.open))await family.locator(':scope > summary').press('Enter');
+  }
+  const anchor=familySpread.locator(':scope > summary');
+  const familyBefore=JSON.stringify(await state());
+  await openFamily('I4','observations');await control('search').fill('白盖');
+  await base.selectOption(pending.id);await anchor.waitFor();
+  check(await familySpread.locator('img').count()===0,'A closed family spread rendered portraits');
+  await anchor.press('Enter');await pages.last().waitFor();
+  check(await base.inputValue()===latest.id && await peer.inputValue()===otherSire.id && !await peer.isVisible(),'Opening on growing siblings failed to find two adult broods with different mates');
+  check(await pages.first().locator('[data-family-adult]').getAttribute('data-family-adult')==='I2' && (await pages.first().innerText()).includes('暮石 · I2') && (await pages.last().innerText()).includes('暮石 · I3'),'Namesake mates could not be told apart');
+  check((await familySpread.innerText()).includes(damNote) && !/最高|达标|\d+\s*分/.test(await familySpread.innerText()),'The common parent’s observation was lost or the game judged the offspring');
+  await base.selectOption(otherSire.id);
+  check(String(await peer.locator('option').evaluateAll(opts=>opts.map(x=>x.value)))===String([latest.id,middle.id,first.id]),'Peer list crossed family lines or included unfinished or cancelled broods');
+  await peer.selectOption(middle.id);
+  check(String(await cardIds(pages.first()))===String(children(otherSire)) && String(await cardIds(pages.last()))===String(children(middle)),'Comparing two and four siblings omitted an animal');
+  await peer.selectOption(first.id);
+  check(String(await cardIds(pages.first()))===String(children(otherSire)) && String(await cardIds(pages.last()))===String(children(first)),'Changing the partner mixed up the two sets of siblings');
+  const photo=id=>familySpread.locator('[data-pair-child="'+id+'"]');
+  check((await photo(archived).innerText()).includes(archiveNote) && (await photo(favorite).innerText()).includes('已收藏'),'Archived observation or player favourite missing from family photos');
+  await familySpread.locator('img').last().waitFor({state:'visible'});
+  check(await pages.first().evaluate(el=>{
+    const other=el.nextElementSibling,a=el.getBoundingClientRect(),b=other.getBoundingClientRect();
+    const left=[...el.querySelectorAll('[data-pair-child]')],right=[...other.querySelectorAll('[data-pair-child]')];
+    const aligned=left.every((photo,i)=>Math.abs(photo.getBoundingClientRect().top-right[i].getBoundingClientRect().top)<2);
+    return aligned && a.width>90 && b.left>=a.right && Math.abs(a.top-b.top)<2 && b.right<=innerWidth && el.parentElement.scrollWidth<=el.parentElement.clientWidth+1;
+  }),'Family photos did not align in birth order on a 390px viewport');
+  await photo(archived).press('Enter');await archivedLink.press('Enter');
+  check(!(await control('focus').isEnabled()) && (await control('record-observation').textContent()).includes(archiveNote),'Opening a sold child lost its archive');
+  await control('family-back').press('Enter');await control('brood-return').press('Enter');
+  check(await control('search').inputValue()==='白盖' && await control('roster-filter').inputValue()==='observations' && await base.inputValue()===otherSire.id && await peer.inputValue()===first.id && await photo(archived).evaluate(el=>el===document.activeElement),'Returning from the archive lost the parent, the two broods, original filter or photo');
+  await photo(favorite).press('Enter');await firstReview.locator('[data-brood-locate="'+favorite+'"]').press('Enter');
+  await control('panel').waitFor({state:'hidden'});check(await page.evaluate(()=>aquarium.selected)===favorite,'The wrong child was shown in the aquarium');
+  await control('inspect').press('Enter');await control('brood-return').press('Enter');
+  check(await photo(favorite).evaluate(el=>el===document.activeElement),'A visit to the tank lost the original family photo');
+  await base.selectOption(pending.id);await page.waitForFunction(()=>!document.querySelector('#crystal-family-spread').open && !document.querySelector('#crystal-family-spread img'));
+  check(await base.inputValue()===pending.id,'Looking at an unfinished litter changed the choice');
+  await openFamily('I2');await anchor.press('Enter');await pages.last().waitFor();
+  check(await familySpread.locator('[data-family-adult="I2"]').count()===1 && await pages.last().getAttribute('data-portrait-brood')===otherDam.id,'Paternal history omitted children from the other mother');
+  await openFamily('I1');check(!await familySpread.isVisible(),'A parent with only one mate was offered a comparison');
+  check(JSON.stringify(await state())===familyBefore,'Browsing the family spread altered game progress');
+  await page.evaluate(async()=>{
+    const saved=aquarium.game.snapshot(), progress=saved.session.Breeding;
+    for(const shrimp of [...progress.individuals,...progress.batches.flatMap(b=>b.children)]){
+      delete shrimp.colour;delete shrimp.pattern;delete shrimp.traitGroup;
+    }
+    await aquarium.game.restore(saved);
+  });
+  if(await control('panel').isHidden())await openJournal();else await control('tab-breed').click();
+  await details(latest.id);
+  if(!await history.evaluate(el=>el.open))await heading.press('Enter');
+  await picker.selectOption(first.id);
+  await right.getByText('花色未记录',{exact:true}).first().waitFor();
+  check(!(await spread.locator('img').count()) && String(await cardIds(right))===String(children(first)),'Historical save invented colours or lost individuals');
+  await openFamily('I4','observations');await anchor.press('Enter');await pages.last().waitFor();
+  check(!await familySpread.locator('img').count() && await familySpread.getByText('花色未记录',{exact:true}).count()>=7,'Historical archive invented family portraits or dropped relatives');
+}

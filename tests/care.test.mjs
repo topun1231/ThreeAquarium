@@ -1,10 +1,83 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {ADULT_AGE,BERRY_DAYS,babyName,biofilmRichness,careSummary,colonyTick,emptyColony,favoriteRoster,isFemale,noteTreat,parseShrimpName,relieveHunger,sanitizeColony,shrimpDetail,syncRoster,tankEntry,TREAT_BONUS} from '../src/care.js';
+import {ADULT_AGE,BERRY_DAYS,babyName,biofilmRichness,careNeeds,careSummary,colonyTick,emptyColony,favoriteRoster,isFemale,noteTreat,observationGroups,observationRoster,parseShrimpName,sanitizeColony,shrimpDetail,syncRoster,tankEntry,TREAT_BONUS} from '../src/care.js';
+import {advanceCreatureEcology} from '../src/ecology.js';
+
+test('观察名单按在缸个体区分同名，尚无名字时仍能按身份定位',()=>{
+  const agents=['id2','id1','id3'].map(CreatureId=>({data:{CreatureId}}));
+  const colony={shrimp:{id1:{name:'小枫'},id2:{name:'小枫'},away:{name:'小枫'}}};
+  assert.deepEqual(observationRoster(agents,colony),[{value:'id2',label:'小枫 · 同名第 1 只'},{value:'id1',label:'小枫 · 同名第 2 只'},{value:'id3',label:'id3'}]);
+  assert.deepEqual(observationRoster(agents.slice(1,2),colony),[{value:'id1',label:'小枫'}]);
+});
 import {validateSession} from '../src/session.js';
 
+test('找虾时收藏排在前面，同名个体保留身份，取消收藏后恢复在缸顺序',()=>{
+  const agents=['a','b','c'].map(CreatureId=>({data:{CreatureId}}));
+  const colony={shrimp:{a:{name:'小雪'},b:{name:'小雪',favorite:true},c:{name:'小红',favorite:true}}};
+  assert.deepEqual(observationRoster(agents,colony),[
+    {value:'b',label:'小雪 · 同名第 2 只 · 已收藏'},{value:'c',label:'小红 · 已收藏'},{value:'a',label:'小雪 · 同名第 1 只'}
+  ]);
+  colony.shrimp.b.favorite=false;
+  assert.deepEqual(observationRoster(agents,colony).map(item=>item.value),['c','a','b']);
+});
+
+test('观察名单沿用出生手记的窝号，区分同名虾，未孵化个体不标窝号',()=>{
+  const agents=['first','new','other'].map(CreatureId=>({data:{CreatureId}}));
+  const colony={shrimp:{first:{name:'小雪'},new:{name:'小雪'},other:{name:'小红'}}};
+  const batches=[
+    {status:'cancelled'},
+    {status:'complete',children:[{id:'first'},{id:'moved'}]},
+    {status:'formed',children:[{id:'other'}]},
+    {status:'hatched',children:[{id:'new'}]},
+  ];
+  assert.deepEqual(observationRoster(agents,colony,batches),[
+    {value:'first',label:'小雪 · 第 2 窝第 1 只'},
+    {value:'new',label:'小雪 · 第 4 窝第 1 只'},
+    {value:'other',label:'小红'},
+  ]);
+});
+
+test('缸边按出生顺序区分同名兄妹，只标记在本缸的实际参赛代表',()=>{
+  const agents=['second','first'].map(CreatureId=>({data:{CreatureId,ExecutionState:'Walk'}}));
+  const colony={shrimp:{first:{name:'小雪'},second:{name:'小雪'}}};
+  const batch={status:'complete',children:[{id:'first'},{id:'second'}],rookieEntry:{entrantId:'second',rank:2}};
+  assert.deepEqual(observationRoster(agents,colony,[batch]).map(r=>r.label),['小雪 · 第 1 窝第 2 只 · 新秀赛第 2 名','小雪 · 第 1 窝第 1 只']);
+  const groups=observationGroups(agents,colony,[batch]);
+  assert.deepEqual(groups.RookieEntrants,['second']);
+  assert.deepEqual(groups.Walk,['second','first']);
+  assert.deepEqual(observationGroups(agents.slice(1),colony,[batch]).RookieEntrants,[]);
+});
+
 const DAY = 86400;
+test('幼虾只按出生窝想要的花色入选，移缸与成年后及时更新',()=>{
+  const children=['sister','moved','brother'].map(id=>({id,colour:'red',pattern:'band'}));
+  const clutch={status:'hatched',goal:'red:band',qualityGoal:'edge',children:[
+    ...children,{id:'other',colour:'red',pattern:'mosura'},{id:'legacy'}
+  ]};
+  const batches=[clutch,{...clutch,goal:undefined,children:[{...children[0],id:'noGoal'}]},
+    {...clutch,status:'formed',children:[{...children[0],id:'unborn'}]}];
+  const matches=(...ids)=>observationGroups(ids.map(id=>agent(id)),null,batches).GoalHatchlings;
+  assert.deepEqual(matches('unborn','noGoal','legacy','other','brother','sister'),['sister','brother']);
+  assert.deepEqual(matches('moved'),['moved']);
+  clutch.status='complete';
+  assert.deepEqual(matches('moved','sister','brother'),[]);
+});
+test('观察达标成虾沿用出生窝目标，并按当前缸里实际存在的个体筛选',()=>{
+  const kid=(id,coverage,pattern='band')=>({id,P:[7,coverage,6],colour:'red',pattern});
+  const parents=[kid('mother',7),kid('father',6),kid('champion',9)];
+  const brood=(children,goals)=>({status:'complete',motherId:'mother',fatherId:'father',children,...goals});
+  const batches=[
+    brood([kid('better',7.1),kid('rounded',7.001),kid('otherLook',8,'mosura'),kid('away',8)],{qualityGoal:'coverage',goal:'red:band'}),
+    brood([kid('cap',9)],{motherId:'champion',qualityGoal:'coverage'}),
+    brood([kid('colourOnly',4),{id:'old'}],{goal:'red:band'}),
+    brood([kid('young',8)],{status:'hatched',goal:'red:band'}),
+    brood([kid('noGoal',9)],{})
+  ];
+  const residents=batches.flatMap(b=>b.children).filter(k=>k.id!=='away').map(k=>agent(k.id));
+  assert.deepEqual(observationGroups(residents,null,batches,parents).GoalAdults,['colourOnly','cap','better']);
+  assert.deepEqual(observationGroups([agent('away')],null,batches,parents).GoalAdults,['away']);
+});
 const catalog = JSON.parse(fs.readFileSync(new URL('../public/assets/catalog.json', import.meta.url)));
 const settings = JSON.parse(catalog.ground);
 const defs = catalog.definitions.map(JSON.parse);
@@ -13,6 +86,50 @@ const runtime = {definitions:defs, settings, entries:new Map(catalog.entries.map
 const agent = (id, {hunger = 0.2, stress = 0.1, state = 'Rest'} = {}) => ({data:{CreatureId:id, ExecutionState:state, Needs:{Hunger:hunger, Stress:stress, Fatigue:0.1}}});
 const record = (name, extra = {}) => ({name, favorite:false, ageDays:ADULT_AGE, hatchAt:null, restUntil:0, ...extra});
 const colonyOf = entries => ({shrimp:Object.fromEntries(entries), journal:[], treat:0});
+test('轮看最近孵化且仍有成员在本缸的一窝，按出生顺序跳过离缸个体',()=>{
+  const brood=(hatchAt,status,...ids)=>({hatchAt,status,children:ids.map(id=>({id}))});
+  const batches=[brood(20,'hatched','a','away','b'),brood(10,'complete','older'),brood(30,'complete','moved'),brood(40,'formed','future')];
+  const latest=(...ids)=>observationGroups(ids.map(id=>agent(id)),null,batches).LatestBrood;
+  assert.deepEqual(latest('b','older','a','future'),['a','b']);
+  assert.deepEqual(latest('older','future'),['older']);
+  assert.deepEqual(latest('future'),[]);
+  assert.deepEqual(latest('moved','a'),['moved']);
+});
+test('加餐观察只认本缸最近一餐实际吃过的个体，区分同名与普通觅食',()=>{
+  const residents=[agent('a'),agent('b'),agent('grazer',{state:'Graze'})];
+  const colony=colonyOf(residents.map(({data})=>[data.CreatureId,record('小雪')]));
+  const diners=()=>observationGroups(residents,colony).MealVisitors;
+  assert.deepEqual(diners(),[]);
+  colony.lastFeeding=['b','moved','a'];
+  assert.deepEqual(diners(),['a','b']);
+  colony.lastFeeding=[];
+  assert.deepEqual(diners(),[]);
+});
+test('观察分组允许动作与成长阶段重叠，只列当前缸，旧缸也能找到抱卵个体',()=>{
+  const residents=[agent('mother',{state:'Graze'}),agent('child'),agent('legacy')];
+  const colony=colonyOf([['mother',record('小雪')],['child',record('小雪',{ageDays:0})],['legacy',record('小红',{hatchAt:20})]]);
+  const brood={motherId:'mother',status:'formed'};
+  const groups=observationGroups(residents,colony,[brood,{motherId:'other-room',status:'formed'}]);
+  assert.deepEqual(groups.Berried,['mother','legacy']);
+  assert.deepEqual(groups.Graze,['mother']);
+  assert.deepEqual(groups.Juvenile,['child']);
+  assert.deepEqual(groups.Rest,['child','legacy']);
+  brood.status='hatched';colony.shrimp.child.ageDays=ADULT_AGE;
+  const later=observationGroups(residents,colony,[brood]);
+  assert.deepEqual(later.Juvenile,[]);
+  assert.deepEqual(later.Berried,['legacy']);
+});
+test('care observations distinguish a namesake even when only one needs attention',()=>{
+  const agents=[agent('a',{hunger:.7,stress:.85}), agent('b',{hunger:.699}),agent('c',{stress:.73})];
+  const colony=colonyOf([['a',record('小雪')],['b',record('小雪')],['c',record('小枫')] ]);
+  assert.deepEqual(careNeeds(agents,colony),[
+    {id:'a',name:'小雪',identity:'小雪 · a',signs:'饥饿 70% · 压力 85%'},
+    {id:'c',name:'小枫',identity:'小枫',signs:'压力 73%'}
+  ]);
+  agents[0].data.Needs.Hunger=agents[0].data.Needs.Stress=.2;
+  assert.deepEqual(careNeeds(agents,colony).map(r=>r.id),['c']);
+  assert.deepEqual(careNeeds([],colony),[]);
+});
 const idFor = female => {
   for (let n = 0; n < 40; n++) {
     const id = `shrimp-${n}`;
@@ -129,11 +246,33 @@ test('biofilm is a richness scalar, not a requirement to hand-feed', () => {
   assert.equal(biofilmRichness(), 0);
   const example = biofilmRichness({plants:89, hardscape:6, simSeconds:7 * DAY});
   assert.ok(example > 0.7 && example <= 1);
-  const creatures = [{Needs:{Hunger:0.4}}];
-  relieveHunger(creatures, 24, 0);
-  assert.equal(creatures[0].Needs.Hunger, 0.4);
-  relieveHunger(creatures, 24, 0.8);
-  assert.equal(creatures[0].Needs.Hunger, 0.06);
+});
+
+test('offline grazing and hunger accrue together before saturation', () => {
+  const profile={EcologicalHungerPerHour:.04,EcologicalStressRecoveryPerHour:.1,MinimumHunger:.06};
+  function hunger(start,cover,hours,parts=1){
+    const game={creatures:[{Needs:{Hunger:start,Stress:0}}],food:[]};
+    for(let i=0;i<parts;i++)advanceCreatureEcology(game,hours*3600/parts,profile,[],0,cover);
+    return game.creatures[0].Needs.Hunger;
+  }
+  assert.equal(hunger(.8,.38,24),1);
+  assert.ok(Math.abs(hunger(.8,1,24)-.32)<1e-10);
+  assert.ok(Math.abs(hunger(.8,1,24,24)-hunger(.8,1,24))<1e-10);
+  assert.equal(hunger(.8,1,1000),.06);
+  assert.equal(hunger(.02,1,0),.02);
+});
+
+test('hatchlings accrue only their own offline time while food and residents accrue the full interval', () => {
+  const creatures=['parent','young','just-hatched'].map(CreatureId=>({CreatureId,Needs:{Hunger:.35,Stress:.6}}));
+  const game={creatures,food:[0],pellet:{anchor:0,age:0}};
+  const profile={EcologicalHungerPerHour:.04,EcologicalStressRecoveryPerHour:.1,MinimumHunger:.06};
+  advanceCreatureEcology(game,7200,profile,[{kind:0}],1200,.5,new Map([['young',3600],['just-hatched',0]]));
+  for(const [i,hours] of [2,1,0].entries()){
+    assert.ok(Math.abs(creatures[i].Needs.Hunger-(.35+.01*hours))<1e-12);
+    assert.ok(Math.abs(creatures[i].Needs.Stress-(.6-.1*hours))<1e-12);
+  }
+  assert.equal(game.food[0],.07);
+  assert.equal(game.pellet,null);
 });
 
 test('shrimp names trim, allow Chinese, and reject empty or overlong text', () => {

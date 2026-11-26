@@ -14,6 +14,9 @@ export const FLORA_TRADE = {
   moss: {label: '莫丝', variants: ['幼苗莫丝', '莫丝', '美丽莫丝', '密丛莫丝'], full: true},
   pala: {label: '纳纳小榕', variants: ['大叶', '小叶', '中叶']},
   nullified: {label: '巴氏榕', variants: ['']},
+  javafern: {label: '爪哇蕨', variants: ['']},
+  vallisneria: {label: '苦草', variants: ['']},
+  browncrypt: {label: '棕色温蒂椒草', variants: ['']},
 };
 
 export function unityPlantName(typeIdOrIndex, definitions) {

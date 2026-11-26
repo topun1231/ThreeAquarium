@@ -9,7 +9,10 @@ test('catalog uses aquarium-trade names and only real authored Anubias meshes', 
   assert.equal(unityPlantName(2), '牛毛毡');
   assert.equal(FLORA_CATALOG.filter(r => r.species === 'pala').length, 3);
   assert.equal(FLORA_CATALOG.filter(r => r.species === 'nullified').length, 1);
-  assert.equal(FLORA_CATALOG.length, 16);
+  assert.equal(FLORA_CATALOG.length, 19);
+  assert.ok(FLORA_CATALOG.some(p=>p.id==='flora:javafern:0' && p.host && p.label==='爪哇蕨'));
+  assert.deepEqual(FLORA_CATALOG.filter(p => ['vallisneria','browncrypt'].includes(p.species)).map(p => [p.label,p.host]),
+    [['苦草',false],['棕色温蒂椒草',false]]);
   assert.ok(FLORA_CATALOG.some(r => r.id === 'flora:pala:0' && r.label === '纳纳小榕 · 大叶'));
   assert.ok(FLORA_CATALOG.some(r => r.id === 'flora:pala:1' && r.label === '纳纳小榕 · 小叶'));
   assert.ok(FLORA_CATALOG.some(r => r.id === 'flora:pala:2' && r.label === '纳纳小榕 · 中叶'));

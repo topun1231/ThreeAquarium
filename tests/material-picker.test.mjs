@@ -32,8 +32,8 @@ test('picture stock preserves all current sizes and excludes retired/legacy stoc
 
 test('plant pictures cover every current choice with distinct files and correct planting surface',()=>{
   assert.deepEqual(PLANT_STOCK.map(p=>p.id),['0','1','2',...FLORA_CATALOG.map(p=>p.id)]);
-  assert.equal(new Set(PLANT_STOCK.map(p=>p.image)).size,19);
-  assert.equal(PLANT_STOCK.filter(p=>p.host).length,8);
+  assert.equal(new Set(PLANT_STOCK.map(p=>p.image)).size,PLANT_STOCK.length);
+  assert.equal(PLANT_STOCK.filter(p=>p.host).length,9);
   for(const plant of PLANT_STOCK){
     const bytes=readFileSync(new URL('../public'+plant.image,import.meta.url));
     assert.equal(bytes.readUInt16BE(),0xffd8);

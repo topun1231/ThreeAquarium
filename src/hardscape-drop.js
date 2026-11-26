@@ -45,6 +45,8 @@ function stopDrop(error){
 export function queueHardscapeDrop(runtime,record,moving){
   clearTimeout(warmTimer);
   warmTimer=setTimeout(()=>prewarmHardscapeDrop(runtime,record,moving).catch(()=>{}),80);
+  const timer=warmTimer;
+  return ()=>clearTimeout(timer);
 }
 export async function prewarmHardscapeDrop(runtime,record,moving=true){
   clearTimeout(warmTimer);

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>我的水草缸 · 实时壁纸</title>
+<style>
+  html,body { width:100%;height:100%;margin:0;overflow:hidden }
+  body { background:linear-gradient(125deg,#fff1d5,#e9dec7 48%,#c8bcaa);color:#483e31;font:16px system-ui;display:grid;place-items:center;isolation:isolate }
+  main { text-align:center;margin:1em;line-height:1.6 }
+  img[src] { position:fixed;inset:0;width:100%;height:100%;object-fit:contain;z-index:-1 }
+  main:has(img[src]) { align-self:end }
+  img[src] + .connection { background:#fff8eceb;border-radius:.6em;padding:.4em 1em }
+  img[src] + .connection[data-waiting]:not(:hover):not(:focus-within) { animation:quiet var(--fade,.5s) 8s forwards }
+  @keyframes quiet { to { opacity:0 } }
+  @media (prefers-reduced-motion:reduce) { .connection { --fade:0s } }
+  img:not([src]) { display:none }
+  p { margin:.35em auto } a { color:inherit;font-size:.9em }
+  iframe { position:fixed;inset:0;width:100%;height:100%;border:0;opacity:0;pointer-events:none }
+</style>
+<main><img data-aquarium-preview alt="整缸留影" onerror="this.removeAttribute('src')"><div class="connection"><p role="status">正在连接上次同步的鱼缸。</p><a href="http://127.0.0.1:5174/?wallpaper=desktop">直接打开鱼缸</a></div></main>
+<script>
+  const link = document.querySelector('a');
+  const still = document.querySelector('[data-aquarium-preview]').getAttribute('src');
+  if (still?.startsWith('data:image/jpeg;base64,')) link.hash = 'aq-preview=' + still.slice('data:image/jpeg;base64,'.length);
+  const entry = new URL(link.href);
+  const status = document.querySelector('[role=status]');
+  let paused=false, timer, probe, shellCheck;
+  function showWaiting() {
+    if(status.parentElement.dataset.waiting)return;
+    status.textContent = '正在等待鱼缸。双击项目里的「启动实时壁纸.cmd」，这里会自动播放上次同步的缸。';
+    status.parentElement.dataset.waiting='1';
+  }
+  function connect(delay=5000) {
+    clearTimeout(timer);
+    shellCheck?.remove();
+    shellCheck=null;
+    if(probe){
+      const previous=probe;
+      probe=null;
+      previous.removeAttribute('src');
+    }
+    if (paused || document.hidden) return;
+    const image=new Image();
+    probe=image;
+    // A stalled local service may never send an error. Give it longer between attempts.
+    timer=setTimeout(()=>{showWaiting();connect(Math.min(30000,delay*2));},delay);
+    function unavailable(){
+      if(probe!==image || paused || document.hidden)return;
+      showWaiting();
+      clearTimeout(timer);
+      timer=setTimeout(()=>connect(),5000);
+    }
+    image.onload=()=>{
+      if(probe!==image || paused || document.hidden)return;
+      if(image.naturalHeight!==2 || ![3,4].includes(image.naturalWidth)){unavailable();return;}
+      clearTimeout(timer);
+      if(image.naturalWidth===3){location.replace(link.href);return;}
+      probe=null;
+      const frame=shellCheck=document.createElement('iframe');
+      frame.title='检查实时鱼缸';
+      frame.tabIndex=-1;
+      frame.setAttribute('aria-hidden','true');
+      const url=new URL(link.href);
+      url.searchParams.set('aq-launcher','check');
+      url.hash='';
+      frame.src=url.href;
+      document.body.append(frame);
+      timer=setTimeout(()=>{showWaiting();connect();},5000);
+    };
+    image.onerror=unavailable;
+    image.src=new URL('/api/wallpaper/ready.gif?launcher=frame&t='+Date.now(),entry).href;
+  }
+  window.addEventListener('message',event=>{
+    if(paused || document.hidden || !shellCheck || event.source!==shellCheck.contentWindow ||
+       event.origin!==entry.origin || event.data!=='aquarium-wallpaper-shell')return;
+    clearTimeout(timer);
+    location.replace(link.href);
+  });
+  link.textContent = '重新连接鱼缸';
+  link.onclick = event => {
+    event.preventDefault();
+    if (paused || document.hidden) return;
+    delete status.parentElement.dataset.waiting;
+    status.textContent = '正在重新连接鱼缸…';
+    connect();
+  };
+  window.wallpaperPropertyListener={
+    setPaused(value){if(typeof value==='boolean' && paused!==value){paused=value;connect();}},
+    applyGeneralProperties(settings){
+      if(!Number.isFinite(settings?.fps) || settings.fps<1)return;
+      entry.searchParams.set('aq-fps',String(settings.fps));
+      link.href=entry.href;
+    },
+  };
+  document.addEventListener('visibilitychange',()=>connect());
+  connect();
+</script></html>

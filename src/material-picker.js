@@ -30,7 +30,7 @@ export function materialForRecord(tank, id, entries, definitions) {
   return entry ? {tool:'plant',value:entry.id,label:entry.label} : null;
 }
 
-export function createMaterialPicker(entries, onFinish, {onRepeat,onMove,definitions=[]} = {}) {
+export function createMaterialPicker(entries, onFinish, {onRepeat,onMove,onPrune,definitions=[]} = {}) {
   const $ = id => document.getElementById(id), soil = $('soil-kind'), stone = $('stone-kind'), plant = $('plant-kind');
   const stocks = hardscapeStock(entries), remembered = new Map();
   let state = null, collapsed = false;
@@ -41,7 +41,8 @@ export function createMaterialPicker(entries, onFinish, {onRepeat,onMove,definit
   const repeat = document.createElement('button'); repeat.id='material-repeat'; repeat.type='button'; repeat.hidden=true;
   repeat.onclick=()=>{if(state?.repeat && !state.busy)onRepeat?.(state.repeat);}; const actions=document.createElement('div');actions.id='object-actions';actions.setAttribute('role','group');actions.setAttribute('aria-label','选中物体操作');actions.hidden=true;
   const move=document.createElement('button');move.id='object-move';move.type='button';move.textContent='移动';move.onclick=onMove;
-  actions.append(move,repeat,$('object-delete'),$('object-left').parentElement,$('object-tilt-left').parentElement);$('current-tool-count').after(actions);
+  const prune=document.createElement('button');prune.id='object-prune';prune.type='button';prune.textContent='修剪这株';prune.onclick=onPrune;
+  actions.append(move,prune,repeat,$('object-delete'),$('object-left').parentElement,$('object-tilt-left').parentElement);$('current-tool-count').after(actions);
   const instructions=document.createElement('p'); instructions.id='current-tool-help'; instructions.className='hint'; bar.append(instructions);
   const recentShelf=document.createElement('div'); recentShelf.id='recent-materials'; recentShelf.setAttribute('aria-label','最近选用'); bar.append(recentShelf);
   const toggle = $('material-toggle'), finish = $('tool-finish');
@@ -130,7 +131,10 @@ export function createMaterialPicker(entries, onFinish, {onRepeat,onMove,definit
     if (catalog) toggle.setAttribute('aria-controls',catalog.id); else toggle.removeAttribute('aria-controls');
     finish.hidden = tool === 'select' && !selected;
     actions.hidden=!editing||tool!=='select'||!selected||moving;move.disabled=busy;
-    finish.textContent = tool === 'plant' ? '结束种植' : tool === 'stone' ? '结束放置' : selected ? moving?'取消移动':'取消选择' : '结束操作';
+    const pruning=tool==='prune-selected';
+    prune.hidden=!onPrune||!selected||tank.Hardscape.some(p=>p.UniqueId===selected)||(!tank.Setup.Filled&&tank.Setup.PreparationStep!==2);
+    prune.disabled=busy;
+    finish.textContent = pruning ? '结束修剪' : tool === 'plant' ? '结束种植' : tool === 'stone' ? '结束放置' : selected ? moving?'取消移动':'取消选择' : '结束操作';
     const label = {pour:'正在铺土',return:'正在回收',push:'正在推土',pull:'正在拉土',finish:'正在细整',level:'正在整平',stone:'正在放置',plant:'正在种植',prune:'正在修剪',select:selected?moving?'正在移动':'已选中':'选择物体'}[tool];
     const select = soilTool ? soil : tool === 'stone' ? stone : tool === 'plant' ? plant : null;
     const sampled = selected ? materialForRecord(tank,selected,entries,definitions) : null;
@@ -139,7 +143,7 @@ export function createMaterialPicker(entries, onFinish, {onRepeat,onMove,definit
     repeat.disabled=busy || (!!sampled && !tank.Setup.Filled && tank.Setup.PreparationStep!==(sampled.tool==='stone'?1:2));
     repeat.textContent=sampled ? '再放同款' : '';
     repeat.title=repeat.disabled&&!busy?`请先切换到「${sampled?.tool==='stone'?'摆木石':'种水草'}」，再选择同款`:'只选取同款材料，点击新位置后才添加';
-    instructions.textContent=tool==='stone' ? '左键释放，落稳后保存；右键单击 / Esc 结束放置。' : tool==='plant' ? '绿色时左键种植，可连续放置；右键单击 / Esc 结束。' : selected ? moving?'左键确认新位置；右键 / Esc 取消移动，保留原物体。':'选择下方操作；单击其他物体可切换，点击空处取消选择。' : tool==='select' ? '单击木石或水草只选中，点击「移动」才开始搬动。' : soilTool ? '按住左键拖动；松开保存这一笔，Esc 取消当前笔划。' : '点击需要修剪的位置；可撤销。';
+    instructions.textContent=pruning ? '点击这株水草要剪的位置。右键单击或 Esc 结束修剪。' : tool==='stone' ? '左键释放，落稳后保存；右键单击 / Esc 结束放置。' : tool==='plant' ? '绿色时左键种植，可连续放置；右键单击 / Esc 结束。' : selected ? moving?'左键确认新位置；右键 / Esc 取消移动，保留原物体。':'选择下方操作；单击其他物体可切换，点击空处取消选择。' : tool==='select' ? '单击木石或水草只选中，点击「移动」才开始搬动。' : soilTool ? '按住左键拖动；松开保存这一笔，Esc 取消当前笔划。' : '点击需要修剪的位置；可撤销。';
     recentShelf.replaceChildren();
     const values=select ? recent.get(select.id)||[] : [];
     recentShelf.hidden=!editing || values.length<2;
@@ -154,7 +158,7 @@ export function createMaterialPicker(entries, onFinish, {onRepeat,onMove,definit
       }
     }
     const surface = tool === 'plant' ? (PLANT_STOCK.find(p=>p.id===plant.value).host ? ' · 附在木石上' : ' · 种在底床上') : '';
-    $('current-tool-name').textContent = tool==='select'&&selected ? `${moving?'正在移动':'已选'}：${state.selectionName||sampled?.label||'物体'}` : label + (select ? ` · ${select.selectedOptions[0].textContent}` : sampled ? ` · ${sampled.label}` : '') + surface;
+    $('current-tool-name').textContent = pruning ? '正在修剪 · '+state.selectionName : tool==='select'&&selected ? `${moving?'正在移动':'已选'}：${state.selectionName||sampled?.label||'物体'}` : label + (select ? ` · ${select.selectedOptions[0].textContent}` : sampled ? ` · ${sampled.label}` : '') + surface;
     $('current-tool-count').textContent = `${tank.Hardscape.length} 件木石 · ${tank.Plants.length+(tank.Flora?.length||0)} 株水草`;
     $('build-guide').classList.toggle('catalog-compact',!catalog || collapsed);
   }

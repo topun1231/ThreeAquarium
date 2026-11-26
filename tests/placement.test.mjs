@@ -4,7 +4,7 @@ import * as T from 'three';
 import {MeshBVH} from 'three-mesh-bvh';
 import {seatHardscape} from '../src/hardscape.js';
 import {validateStock,populationRecords} from '../src/population.js';
-import {flowPoint} from '../src/plant-contacts.js';
+import {flowPoint,importedFlow} from '../src/plant-contacts.js';
 import {createHabitat} from '../src/habitat.js';
 import fs from 'node:fs';
 
@@ -49,3 +49,20 @@ test('settling refits each mesh once and leaves final collision queries current'
 test('editable solid candidates cannot mutate cached live collision geometry',async()=>{const geometry=new T.BoxGeometry(.1,.1,.1),item={node:'stone',owner:'stone',kind:1,solid:true,geometry,transform:new T.Matrix4()},live=await createHabitat(null,null,()=>{},null,[item]),cached=await createHabitat(null,null,()=>{},live,[item]),draft=await createHabitat(null,null,()=>{},live,[{...item,rebuild:true}]);assert.equal(live.surfaces[0],cached.surfaces[0]);assert.notEqual(live.surfaces[0],draft.surfaces[0]);const before=live.surfaces[0].geo.attributes.position.array.slice();draft.surfaces[0].geo.translate(0,.1,0);assert.deepEqual(live.surfaces[0].geo.attributes.position.array,before);});
 test('population keeps source personality and validates imported identities',()=>{const creatures=JSON.parse(fs.readFileSync(new URL('../public/assets/initial-population.json',import.meta.url)));creatures.forEach((c,i)=>c.CreatureId='source-'+i);const stock={tankId:'tank',creatures};validateStock(stock);const a=populationRecords(stock,50),b=populationRecords(stock,50);assert.deepEqual(a,b);assert.deepEqual(a[0].Personality,creatures[0].Personality);assert.equal(new Set(a.map(c=>c.CreatureId)).size,50);assert.throws(()=>validateStock({...stock,creatures:[creatures[0],creatures[0]]}));assert.throws(()=>populationRecords(stock,51));});
 test('leaf collision flow is bounded, deterministic and leaves root still',()=>{const m={phase:.7,motion:1,lowGrass:0,leaf:1},b=[.1,1,2,3],w=[1,1,1,1],root=new T.Vector3(.02,0,.03);assert.deepEqual(flowPoint(root.clone(),b,w,m,30),root);for(let time=0;time<120;time+=.1){const p=new T.Vector3(.02,.3,.03),q=flowPoint(p.clone(),b,w,m,time);assert.ok(q.distanceTo(p)<.01);assert.deepEqual(q,flowPoint(p.clone(),b,w,m,time));}});
+test('同一片叶的接触点与出氧点都使用本顶点的枝条和权重',()=>{
+ const branches=Float32Array.of(0,1,.2,.8,.1,.7,2,3), weights=Float32Array.of(.15,1,.4,1,.85,1,.7,1);
+ for(const lowGrass of [0,1]){
+  const material={phase:.7,motion:1,leaf:1,lowGrass}, p=new T.Vector3(.02,.3,.03);
+  const expected=flowPoint(p.clone(),branches.subarray(4),weights.subarray(4),material,12);
+  assert.deepEqual(flowPoint(p.clone(),branches,weights,material,12,4),expected);
+  assert.notDeepEqual(flowPoint(p.clone(),branches,weights,material,12),expected);
+  const flow=importedFlow(branches,weights,material);
+  for(const [i,t] of [[1,12],[0,12],[0,13],[1,12]]){
+   assert.deepEqual(flow(p.clone(),i,t),flowPoint(p.clone(),branches,weights,material,t,i*4));
+  }
+  for(const component of [7,6]){
+   branches[component]+=.2;
+   assert.deepEqual(flow(p.clone(),1,12),flowPoint(p.clone(),branches,weights,material,12,4));
+  }
+ }
+});

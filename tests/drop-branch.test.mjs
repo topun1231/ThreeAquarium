@@ -34,5 +34,25 @@ test('real small boulder tips off a dense branch end instead of sleeping on its 
     assert.deepEqual(frame.poses[0].position,bodies[0].position.map(Math.fround),'fixed branch stays in place');
    }finally{sim.dispose();}
   }
+  // Exercise the worker's release path, including restoring a template with the piece at another pose.
+  const previous=globalThis.self,host={};globalThis.self=host;
+  try{
+   await import('../src/drop-worker.js');
+   const input={bodies,wake:['stone'],ground:{rows:2,columns:2,width:1.2,depth:.6,heights:new Float32Array(4).fill(.04)}};
+   const run=data=>new Promise((resolve,reject)=>{
+    const frames=[];
+    host.postMessage=frame=>{
+     if(frame.error)return reject(Error(frame.error));
+     if(frame.poses)frames.push(frame.poses);
+     if(frame.done)resolve(frames);
+    };
+    host.onmessage({data});
+   });
+   bodies[1].position=origin;
+   const cold=await run(input);
+   await run({...input,warm:true,bodies:[bodies[0],{...bodies[1],position:[.18,.11,.04]}]});
+   assert.deepEqual(await run(input),cold);
+   assert.ok(cold.at(-1)[1].position[1]<.14,'the worker also lets the stone fall off the branch');
+  }finally{if(previous===undefined)delete globalThis.self;else globalThis.self=previous;}
  }finally{assets.geometries.forEach(g=>g.dispose());}
 });

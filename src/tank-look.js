@@ -1,4 +1,9 @@
+import {gameStorage} from './live-wallpaper.js';
 import * as T from 'three';
+import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
+import {illustratedPlanesGLSL,isPaintedHardscape} from './illustrated-look.js';
+import {waterRipplesGLSL} from './water-ripples.js';
+import {shadeWindowSun,windowSunOffset} from './crafted.js';
 
 const KEY = 'aquarium.three.quality.v1';
 const PRESETS = {
@@ -9,7 +14,7 @@ export function qualityPreset() {
   return PRESETS.high;
 }
 
-export function initialQuality(storage = globalThis.localStorage) {
+export function initialQuality(storage = gameStorage) {
   try { storage?.setItem(KEY, 'high'); } catch {}
   return 'high';
 }
@@ -21,22 +26,63 @@ function thicken(node, floor, target) {
 }
 
 export function shapeTankLights(scene) {
+  scene.background = new T.Color('#c3c8bb');
   for (const light of scene.children) {
     if (!light.isLight) continue;
-    if (light.isHemisphereLight) light.intensity = 0.52;
+    if (light.isHemisphereLight) {
+      light.color.set('#fff2dc');
+      light.groundColor.set('#c5ae9b');
+      light.intensity = .95;
+    }
     else if (light.isSpotLight && light.castShadow) {
-      light.angle = 0.52;
       light.penumbra = 0.78;
-      light.intensity *= 0.82;
+      // The lamp is only 0.17 above the water; include blockers close to the emitter.
+      light.shadow.camera.near=.01;
+      light.shadow.camera.updateProjectionMatrix();
     } else if (light.isPointLight) light.intensity *= 0.4;
-    else if (light.isDirectionalLight && light.castShadow) light.intensity *= 0.88;
+    else if (light.isDirectionalLight && !light.castShadow) {
+      // Diffuse window fill: keep white shells neutral on the side facing away from the sun.
+      light.color.set('#eeeae3');
+      light.userData.windowLight=true;
+    }
+    else if (light.isDirectionalLight && light.castShadow) {
+      // Reuse the existing shadow map for the daylight entering from the left window.
+      light.target.position.set(.18,.02,.26);
+      const frame=scene.getObjectByName('Illustrated window shadow frame');
+      light.position.copy(light.target.position).addScaledVector(windowSunOffset,frame?3:1);
+      light.color.set('#ffe4b6');
+      light.intensity=1.8;
+      light.userData.windowLight=true;
+      if(frame){
+        light.target.position.set(.9,.24,-.18);
+        light.position.copy(light.target.position).addScaledVector(windowSunOffset,3);
+        // Cover the window, cabinet, rack and visible floor in the room overview.
+        Object.assign(light.shadow.camera,{left:-7.1,right:6.72,top:4.35,bottom:-4.86,far:14.4});
+        light.shadow.mapSize.set(4096,3072);
+        light.shadow.camera.updateProjectionMatrix();
+      }
+    }
   }
-  const key = new T.SpotLight('#fff3e2', 3.2, 2.6, 0.46, 0.86, 1.5);
-  key.name = 'tank-key';
-  key.position.set(0, 1.02, 0.26);
-  key.target.position.set(0, 0.03, 0.04);
-  key.castShadow = false;
-  scene.add(key, key.target);
+}
+
+export function prepareWallpaperLights(scene,renderer) {
+  scene.traverse(light=>{
+    if (!light.isLight || !light.layers.isEnabled(0)) return;
+    // Both passes share the same light list so Three can reuse its program parameters.
+    light.layers.enable(1);
+    if (renderer.shadowMap.type!==T.PCFShadowMap || !light.castShadow || !(light.isDirectionalLight || light.isSpotLight)) return;
+    const shadow=light.shadow;
+    if (shadow.map) return;
+    const {x:width,y:height}=shadow.mapSize;
+    if (Math.max(width,height)>renderer.capabilities.maxTextureSize) return;
+    // PCF and the water shader sample only depth. The colour attachment can be a single byte per texel.
+    const depth=new T.DepthTexture(width,height,T.UnsignedIntType);
+    depth.compareFunction=renderer.capabilities.reversedDepthBuffer ? T.GreaterEqualCompare : T.LessEqualCompare;
+    depth.minFilter=depth.magFilter=T.LinearFilter;
+    shadow.map=new T.WebGLRenderTarget(width,height,{format:T.RedFormat,depthTexture:depth});
+    shadow.needsUpdate=true;
+    shadow.camera.updateProjectionMatrix();
+  });
 }
 
 function installCaustics(materials, time, gain, level) {
@@ -52,73 +98,78 @@ function installCaustics(materials, time, gain, level) {
       shader.uniforms.aqCGain = gain;
       shader.uniforms.aqCLevel = level;
       shader.vertexShader = header + shader.vertexShader.replace('#include <project_vertex>', 'vec4 aqCP = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\naqCP = instanceMatrix * aqCP;\n#endif\naqCausticPos = (modelMatrix * aqCP).xyz;\n#include <project_vertex>');
-      shader.fragmentShader = header + shader.fragmentShader.replace('#include <opaque_fragment>', `
+      shader.fragmentShader = header + waterRipplesGLSL + shadeWindowSun(shader.fragmentShader, `
         float aqBelow = 1.0 - smoothstep(aqCLevel - 0.06, aqCLevel + 0.005, aqCausticPos.y);
         float aqInside = step(abs(aqCausticPos.x), 0.6) * step(abs(aqCausticPos.z), 0.31) * step(-0.002, aqCausticPos.y);
-        vec2 aqRel = vec2(aqCausticPos.x / 0.58, (aqCausticPos.z - 0.06) / 0.36);
-        float aqPool = smoothstep(1.25, 0.15, length(aqRel));
-        vec2 aqP = aqCausticPos.xz * 34.0 + vec2(aqCausticPos.y * 9.0);
-        float aqS1 = sin(aqP.x + aqCTime * 0.7) + sin(aqP.y * 1.31 - aqCTime * 0.55) + sin((aqP.x + aqP.y) * 0.71 + aqCTime * 0.43);
-        float aqS2 = sin(aqP.x * 1.63 - aqCTime * 0.38) + sin(aqP.y * 0.87 + aqCTime * 0.61) + sin((aqP.x - aqP.y) * 1.17 - aqCTime * 0.29);
-        float aqBand = pow(0.3 / (abs(aqS1) + 0.3), 2.5) + pow(0.3 / (abs(aqS2) + 0.3), 2.5) * 0.7;
-        outgoingLight *= 1.0 + aqBand * aqCGain * 2.2 * aqBelow * aqPool * aqInside;
-        #include <opaque_fragment>`);
+        vec3 sunRay=refract(-inverseTransformDirection(directLight.direction,viewMatrix),vec3(0.,1.,0.),1./1.333);
+        float aqFacing=max(0.,dot(nonPerturbedNormal,mat3(viewMatrix)*-sunRay));
+        float depthBelow=max(0.,aqCLevel-aqCausticPos.y);
+        vec2 surfaceXZ=aqCausticPos.xz+sunRay.xz/sunRay.y*depthBelow;
+        vec2 opening=1.-smoothstep(vec2(.50,.22),vec2(.60,.31),abs(surfaceXZ));
+        // Crests concentrate light and troughs spread it; both effects grow with travel.
+        vec3 crest=amplitudes*sin(wavePhase(surfaceXZ,aqCTime));
+        // Short waves spread over depth as light passes through a wide window.
+        float focus=dot(crest,vec3(dot(waveA,waveA),dot(waveB,waveB),dot(waveC,waveC)*exp(-7.*depthBelow)))*depthBelow;
+        directLight.color*=1.+focus*aqFacing*opening.x*opening.y*aqCGain*aqBelow*aqInside;
+      `).replace('#include <opaque_fragment>',illustratedPlanesGLSL+'\n#include <opaque_fragment>');
     };
     material.customProgramCacheKey = () => `${previousKey ? previousKey() : material.uuid}:caustic2`;
     material.needsUpdate = true;
   }
 }
 
-function makeShafts() {
-  const material = new T.ShaderMaterial({
-    transparent:true, depthWrite:false, blending:T.AdditiveBlending,
-    uniforms:{aqTime:{value:0}, aqGain:{value:1}},
-    vertexShader:'varying vec2 vUv; void main(){vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-    fragmentShader:`varying vec2 vUv; uniform float aqTime; uniform float aqGain;
-      void main(){
-        float side = pow(sin(vUv.x * 3.14159), 3.0);
-        float fade = smoothstep(0.0, 0.35, vUv.y) * smoothstep(1.0, 0.55, vUv.y);
-        float drift = 0.75 + 0.25 * sin(aqTime * 0.3 + vUv.y * 3.0);
-        gl_FragColor = vec4(vec3(0.80, 0.88, 0.78), side * fade * drift * 0.028 * aqGain);
-      }`,
-  });
-  const group = new T.Group();
-  group.name = 'tank-shafts';
-  for (const x of [-0.16, 0.02, 0.18]) {
-    const plane = new T.Mesh(new T.PlaneGeometry(0.16, 0.46), material);
-    plane.position.set(x, 0.30, 0.1);
-    plane.rotation.y = x * 0.4;
-    plane.castShadow = false;
-    plane.receiveShadow = false;
-    group.add(plane);
-  }
-  group.userData.material = material;
-  return group;
-}
-
-export function installTankLook({scene, aq, water}) {
+export function installTankLook({scene, aq, water, runtime}) {
   const skip = new Set();
   for (const mesh of aq.meshes) {
     const list = [].concat(mesh.material);
+    if (mesh.name==='Diffused LED underside' && mesh.parent) {
+      // Keep the lens seated against the housing while exposing its frosted lower edge.
+      const mount=mesh.parent;
+      const thickness=Math.max(mount.scale.y,.008);
+      mount.position.y-=(thickness-mount.scale.y)/2;
+      mount.scale.y=thickness;
+      mount.scale.z=Math.max(mount.scale.z,.044);
+    }
+    if (mesh.name==='Slim anodized plant light' && mesh.parent) {
+      const mount=mesh.parent, extra=Math.max(0,.023-mount.scale.y);
+      mount.scale.y+=extra;mount.position.y+=extra/2;
+      mount.scale.z=Math.max(mount.scale.z,.069);
+    }
+    if (/^(Slim anodized plant light|Diffused LED underside)$/.test(mesh.name) && mesh.parent && mesh.geometry.name==='Cube') {
+      const {x,y,z}=mesh.parent.scale;
+      const profile=new RoundedBoxGeometry(x,y,z,2,y*.43).scale(1/x,1/y,1/z);
+      profile.clearGroups();profile.addGroup(0,profile.attributes.position.count,0);
+      mesh.geometry=profile;
+    }
     if (mesh.userData.creatureId || /pane|Water|glass|rim|Waterline|Edge/i.test(mesh.name)) list.forEach(m => skip.add(m));
     if (/clear pane/i.test(mesh.name) && mesh.parent) thicken(mesh.parent, 0.02, 0.008);
-    if (/^Waterline/.test(mesh.name) && mesh.parent) thicken(mesh.parent, 0.01, 0.006);
+    // The pane shader draws the meniscus at the water level.
+    if (/^Waterline/.test(mesh.name)) mesh.visible=false;
+    if (mesh.name==='Fixed tank rim') {
+      // Match the edge of the glass to the pane thickness so it survives the room view.
+      if(mesh.parent)thicken(mesh.parent,.004,.006);
+    }
   }
   for (const material of aq.materials) {
-    if (skip.has(material) || !/GlassEdge/.test(material.name)) continue;
-    material.color.lerp(new T.Color('#8fcebc'), 0.45);
-    material.emissive = new T.Color('#16362e');
-    material.emissiveIntensity = 0.35;
+    if (material.name!=='GlassEdge') continue;
+    material.color.set('#83a99a');
+    material.roughness=.24;
     material.transparent = true;
-    material.opacity = Math.max(material.opacity, 0.72);
+    material.opacity = .78;
   }
   const time = {value:0};
   const gain = {value:0};
   const waterHeight = {value:0.58};
-  const receivers = aq.materials.filter(material => material?.isMeshStandardMaterial && !skip.has(material) && !/Glass|Water|Shrimp|shrimp/i.test(material.name || ''));
+  const diffuser=aq.materials.find(m=>m?.name==='Soft LED emitter');
+  if(diffuser)diffuser.emissive.set('#ffe5b0');
+  const deskWater=aq.materials.find(m=>m?.userData.deskWater)?.userData.deskWater;
+  if (runtime) {
+    runtime.onCatalogReady = catalog => installCaustics(catalog.materials.filter(m => isPaintedHardscape(m) || m.userData.source?.leaf >= 0), time, gain, waterHeight);
+    if (runtime.catalog) runtime.onCatalogReady(runtime.catalog);
+  }
+  // The walnut already shades the window and transmitted light; underwater shading flattens its sunlit grain.
+  const receivers = aq.materials.filter(material => material?.isMeshStandardMaterial && !material.userData.deskWater && !skip.has(material) && !/Glass|Water|Shrimp|shrimp/i.test(material.name || ''));
   let causticsOn = false;
-  const shafts = makeShafts();
-  scene.add(shafts);
   let level = 'high';
   const listeners = [];
   function apply() {
@@ -127,7 +178,6 @@ export function installTankLook({scene, aq, water}) {
     if (water?.fog) water.fog.value = preset.fog;
     gain.value = preset.caustic;
     if (preset.caustic > 0 && !causticsOn) { installCaustics(receivers, time, gain, waterHeight); causticsOn = true; }
-    shafts.visible = preset.shafts;
     for (const fn of listeners) fn(PRESETS[level], level);
   }
   apply();
@@ -140,11 +190,11 @@ export function installTankLook({scene, aq, water}) {
       time.value = now;
       const preset = PRESETS[level];
       waterHeight.value = height;
-      const active = wet && lightOn && height > 0.035;
-      gain.value = active ? preset.caustic : 0;
-      shafts.visible = active && preset.shafts;
-      shafts.scale.y = Math.max(0, height / 0.58);
-      if (shafts.visible) shafts.userData.material.uniforms.aqTime.value = now;
+      if(diffuser)diffuser.emissiveIntensity=lightOn?1.6:0;
+      if(deskWater)deskWater.value=wet?height:0;
+      const underwater = wet && height > 0.035;
+      gain.value = underwater ? preset.caustic : 0;
+      if(water)water.lampScattering=underwater && lightOn && preset.shafts;
     },
   };
 }

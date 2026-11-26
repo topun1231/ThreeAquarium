@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {SPECIES, growFlora, pruneFlora, sanitizeFlora, planFlora, visibleNodes, floraSignature, parsePlantKind, checkFloraGround, checkFloraHost, makeFloraRecord, FLORA_CATALOG} from '../src/flora.js';
+import {SPECIES, growFlora, pruneFlora, sanitizeFlora, visibleNodes, floraSignature, parsePlantKind, checkFloraGround, checkFloraHost, makeFloraRecord, FLORA_CATALOG} from '../src/flora.js';
 import * as T from 'three';
 import {floraCollisionItems} from '../src/flora-view.js';
 import {advanceEcology} from '../src/ecology.js';
 import {validateSession} from '../src/session.js';
+import {dressSample} from '../src/sample-aquascape.js';
+import {createHabitat, vec} from '../src/habitat.js';
+import {rotation} from '../src/tank-runtime.js';
+import {Substrate} from '../src/substrate.js';
 
 const catalog = JSON.parse(fs.readFileSync(new URL('../public/assets/catalog.json', import.meta.url)));
 const defs = catalog.definitions.map(JSON.parse), settings = JSON.parse(catalog.ground);
@@ -14,13 +18,6 @@ const runtime = {definitions:defs, settings, entries:new Map(catalog.entries.map
 
 const stem = (extra = {}) => ({UniqueId:'r1', Species:'rotala', Variant:1, Yaw:0.3, Scale:1, Hue:0, Nodes:10, X:0.3, Z:0.15, ...extra});
 const moss = (extra = {}) => ({UniqueId:'m1', Species:'moss', Variant:0, Yaw:0, Scale:1, Hue:0.2, Nodes:14, Host:'wood', Local:[0.01, 0.02, 0], Normal:[0, 1, 0], ...extra});
-
-// A flat tank floor with one wooden ridge across the back left.
-const probe = (x, z) => {
-  if (Math.abs(x) > 0.57 || Math.abs(z) > 0.28) return null;
-  if (x < -0.1 && x > -0.4 && z > 0 && z < 0.12) return {y:0.09, kind:2, owner:'W0 wood', normal:[0, 0.9, 0.2]};
-  return {y:0.04, kind:0, owner:'Aquarium living substrate', normal:[0, 1, 0]};
-};
 
 test('growth adds nodes in ecology days and stops at the species maximum', () => {
   const list = [stem({Nodes:SPECIES.rotala.start})];
@@ -62,17 +59,76 @@ test('sanitize keeps valid records, strips extras and rejects bad ones', () => {
   assert.throws(() => sanitizeFlora([moss({Local:[0, NaN, 0]})]));
 });
 
-test('default planting is deterministic, uses every species and respects existing plants', () => {
-  const a = planFlora('tank-a', probe), b = planFlora('tank-a', probe), c = planFlora('tank-b', probe);
-  assert.deepEqual(a, b);
-  assert.notDeepEqual(a, c);
-  for (const species of Object.keys(SPECIES)) assert.ok(a.some(r => r.Species === species), species);
-  assert.ok(a.filter(r => r.Species === 'moss').every(r => r.Host === 'W0 wood' && r.World[1] === 0.09));
-  assert.ok(a.filter(r => r.Species === 'carpet').every(r => r.Z < -0.1), 'carpet stays in the foreground');
-  const blocked = planFlora('tank-a', probe, [{x:0.44, z:0.17}]);
-  assert.ok(blocked.filter(r => r.Species === 'rotala').every(r => Math.hypot(r.X - 0.44, r.Z - 0.17) > 0.012));
-  const variants = new Set(a.map(r => r.Variant));
-  assert.ok(variants.size >= 3);
+test('the sample has one wooded fern island with a clear sand cove and grazing stone', async () => {
+  const read=name=>fs.readFileSync(new URL('../public/assets/'+name,import.meta.url));
+  const bytes=read('geometry.bin');
+  const habitat=await createHabitat(JSON.parse(read('scene.json')),bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength));
+  const save=structuredClone(source);
+  dressSample(save,settings,habitat);
+  const t=validateSession(save,runtime).Tank,soil=new Substrate(settings,t.Substrate);
+  assert.deepEqual(t.Hardscape.map(r=>r.TypeId),['W01','R01','R02','R03','R05','R01']);
+  const [frontBoulder,bankBoulder]=t.Hardscape.filter(r=>r.TypeId==='R01');
+  assert.deepEqual(bankBoulder.Rotation,frontBoulder.Rotation);
+  const wood=t.Hardscape[0];
+  const pose=r=>new T.Matrix4().compose(vec(r.Position),rotation(r.Rotation),vec(r.Scale));
+  const original=source.Tank.Hardscape.find(r=>r.UniqueId===wood.UniqueId);
+  const transform=pose(wood).multiply(pose(original).invert()),bounds=new T.Box3(),point=new T.Vector3();
+  for(const surface of habitat.surfaces.filter(s=>s.solid&&s.owner.endsWith(wood.UniqueId))){
+    const vertices=surface.geo.attributes.position;
+    for(let i=0;i<vertices.count;i++)bounds.expandByPoint(point.fromBufferAttribute(vertices,i).applyMatrix4(transform));
+  }
+  const span=bounds.getSize(new T.Vector3());
+  assert.ok(span.x>.65 && bounds.max.y>.28 && bounds.max.y<.36 && bounds.max.x<.30,'the root slopes down from the planted bank and leaves the cove open');
+  assert.ok(bounds.min.x>-.59 && bounds.max.x<.59,'the main root needs clearance from both side panes');
+  const flat=t.Hardscape.find(r=>r.TypeId==='R05');
+  function sampleHit(piece,origin,direction){
+    const original=source.Tank.Hardscape.find(r=>r.UniqueId===piece.UniqueId);
+    const toSample=pose(piece).multiply(pose(original).invert());
+    const ray=new T.Ray().set(origin,direction).applyMatrix4(toSample.clone().invert());
+    const surface=habitat.surfaces.find(s=>s.solid && s.owner.endsWith(piece.UniqueId));
+    return surface.bvh.raycastFirst(ray,T.DoubleSide)?.point.applyMatrix4(toSample);
+  }
+  let previousGap=.075;
+  for(const [x,z] of [[.16,-.075],[.18,-.082],[.25,-.124]]){
+    const stoneTop=sampleHit(flat,new T.Vector3(x,1,z),new T.Vector3(0,-1,0));
+    assert.ok(stoneTop,'the branch reaches the actual stone');
+    const underside=sampleHit(wood,stoneTop,new T.Vector3(0,1,0));
+    const gap=underside?.y-stoneTop.y;
+    assert.ok(gap>.025 && gap<previousGap,'the branch descends towards the rock, leaving room below');
+    previousGap=gap;
+  }
+  assert.ok(t.Flora.some(r=>r.Host===flat.UniqueId && r.Species==='moss'));
+  const rock=t.Hardscape.find(r=>r.TypeId==='R02');
+  assert.equal(t.Flora.find(r=>r.Species==='pala').Host,rock.UniqueId);
+  assert.equal(t.Flora.find(r=>r.Species==='nullified').Host,wood.UniqueId);
+  assert.ok(t.Flora.filter(r=>r.Species==='javafern').length===3);
+  assert.ok(!t.Plants.some(r=>r.TypeId.endsWith('background-stem-prototype')));
+  assert.ok(!t.Flora.some(r=>r.Species==='rotala'));
+  const ribbons=t.Flora.filter(r=>r.Species==='vallisneria');
+  const bank=ribbons.filter(r=>r.X<-.30),fork=ribbons.filter(r=>r.X>=-.30 && r.X<-.07);
+  assert.equal(bank.length,6);
+  assert.equal(fork.length,3);
+  assert.ok(fork.every(r=>r.X<-.10 && r.Z>.18 && r.Nodes<=9),'sparse clumps grow behind the fork');
+  assert.ok(bank.every(r=>r.Z>.10));
+  const rear=bank.filter(r=>r.Z>.21);
+  assert.equal(rear.length,3);
+  const corner=rear.find(r=>r.X<-.52);
+  assert.ok(corner && soil.kind(soil.cell(corner.X,corner.Z))===2,'a rear ribbon is rooted on the sand by the cup-side corner');
+  const backLayer=ribbons.filter(r=>r.Z>.21),frontLayer=ribbons.filter(r=>r.Z<=.21);
+  assert.equal(backLayer.length,5);
+  assert.ok(Math.min(...backLayer.map(r=>r.Scale)) > Math.max(...frontLayer.map(r=>r.Scale)));
+  const hosts=new Set(t.Hardscape.map(r=>r.UniqueId));
+  assert.ok(t.Flora.filter(r=>r.Host).every(r=>hosts.has(r.Host)));
+  const shore=t.Flora.filter(r=>!r.Host && r.X>=-.07).sort((a,b)=>a.X-b.X);
+  assert.deepEqual(shore.map(r=>r.Species),['vallisneria','vallisneria']);
+  assert.deepEqual(t.Flora.filter(r=>r.Species==='browncrypt').map(r=>[r.X,r.Z]),[[-.388,-.093],[-.357,-.145]]);
+  assert.ok(shore[0].Scale>shore[1].Scale && shore[0].Nodes>shore[1].Nodes);
+  assert.ok(shore.every(r=>r.Z>.02 && r.X<.28),'the foreground sand cove stays open');
+  assert.ok(t.Plants.every(r=>r.Position.x<-.07&&Math.abs(r.Position.y-soil.sample(r.Position.x,r.Position.z))<.00001));
+  assert.ok(soil.sample(-.20,.07)>soil.sample(.42,-.10)+.10);
+  assert.equal(soil.kind(soil.cell(-.20,.09)),4);
+  assert.equal(soil.kind(soil.cell(.43,-.12)),2);
+  soil.layers.forEach((layers,i)=>assert.ok(Math.abs(layers.reduce((sum,l)=>sum+l.Volume,0)/soil.area[i]-(soil.h[i]-soil.MinHeight))<.00001));
 });
 
 test('flora grows through advanceEcology and survives a session round trip', () => {
@@ -87,12 +143,38 @@ test('flora grows through advanceEcology and survives a session round trip', () 
   assert.notEqual(floraSignature(save.Tank.Flora), floraSignature([stem({Nodes:20}), moss()]));
 });
 
+test('生态推进只在叶节、叶姿、原生水草阶段或剪口确实变化时要求更新落脚面',()=>{
+  const save=structuredClone(source), plant=save.Tank.Plants[0];
+  save.Tank.Plants=[plant];
+  const shoot=stem({Nodes:9}), leaf={...moss(),Species:'pala',Nodes:6,Upright:0};
+  save.Tank.Flora=[shoot,leaf];
+  const advance=()=>advanceEcology(save,defs,1);
+  assert.equal(advance(),false);
+  shoot.Nodes=9.9999999;
+  assert.equal(advance(),true);
+  assert.equal(visibleNodes(shoot),10);
+  leaf.Upright=1/12-1e-8;
+  assert.equal(advance(),true);
+  plant.Stage=0;
+  assert.equal(advance(),true);
+  plant.Cuts=[{EcologicalAgeAtCut:plant.EcologicalAgeSeconds-defs.find(d=>d.TypeId===plant.TypeId).TrimRecoveryDays*86400}];
+  assert.equal(advance(),true);
+  assert.deepEqual(plant.Cuts,[]);
+  assert.equal(advance(),false);
+  save.Tank.Setup.Filled=false;
+  const dry=structuredClone(save);
+  assert.equal(advance(),false);
+  assert.deepEqual(save,dry);
+});
+
 test('catalog covers every species and variant, with ground and host placement rules', () => {
-  assert.equal(FLORA_CATALOG.length, 16);
+  assert.equal(FLORA_CATALOG.length, 19);
   assert.deepEqual(parsePlantKind('1'), {unity:1});
   assert.deepEqual(parsePlantKind('flora:rotala:2'), {species:'rotala', variant:2});
   assert.throws(() => parsePlantKind('flora:kelp:0'));
   checkFloraGround([], {x:0.1, z:-0.15, species:'rotala'});
+  assert.throws(() => checkFloraGround([], {x:0.1,z:-0.15,species:'javafern'}), /木石/);
+  checkFloraHost([], {host:'R1',local:[0,0.01,0],species:'javafern'});
   assert.throws(() => checkFloraGround([], {x:0.1, z:-0.15, species:'moss'}), /木石/);
   assert.throws(() => checkFloraGround([stem({X:0.1, Z:-0.15})], {x:0.105, z:-0.15, species:'rotala'}), /太近/);
   assert.throws(() => checkFloraGround([], {x:0.8, z:0, species:'carpet'}), /缸内/);

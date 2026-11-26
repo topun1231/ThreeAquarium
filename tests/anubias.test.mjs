@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import * as T from 'three';
 import {anubiasGeometry,loadAnubias} from '../src/anubias.js';
 import {FloraView,floraUnitMetrics,swayFloraPoint} from '../src/flora-view.js';
-import {floraFlow} from '../src/plant-contacts.js';
+import {floraFlow,PlantContacts} from '../src/plant-contacts.js';
+import {createHabitat} from '../src/habitat.js';
 import {FLORA_CATALOG,sanitizeFlora,pruneFlora,floraSignature,growFlora,makeFloraRecord} from '../src/flora.js';
 
 const pack=JSON.parse(fs.readFileSync(new URL('../public/assets/anubias/models.json',import.meta.url)));
@@ -56,6 +57,64 @@ test('cached dense-leaf contact flow matches the rendered flow across stems and 
  for(const time of [0,10,10,120])for(const i of [0,1,2,1])for(const y of [-.1,.05,.06,.15,.3,.9]){
   const p=new T.Vector3(.1,y,.2),expected=swayFloraPoint(p.clone(),stems.array.subarray(i*4,i*4+4),{amplitude:sways.getX(i),height:sways.getY(i)},time);
   assert.ok(expected.distanceTo(flow(p,i,time))<1e-12);
+ }
+});
+
+for(const trimmed of [false,true])test(`moving ${trimmed?'trimmed':'intact'} leaf collider keeps exact vertices and bounds across transforms`,async()=>{
+ const geo=new T.PlaneGeometry(.012,.02),pos=geo.attributes.position;
+ if(trimmed){geo.setIndex([0,2,1]);pos.setXYZ(3,.09,.08,-.09);}
+ geo.setAttribute('floraStem',new T.Float32BufferAttribute([0,-.01,0,1,0,-.01,0,1,.01,-.02,0,2,.01,-.02,0,2],4));
+ geo.setAttribute('floraSway',new T.Float32BufferAttribute([.003,.03,.003,.03,.003,.03,.001,.05],2));
+ const transform=new T.Matrix4(),item={node:'leaf',owner:'leaf',kind:3,geometry:geo,transform,material:{leaf:1,motion:1}};
+ const habitat=await createHabitat(null,null,()=>{},null,[item]),surface=habitat.surfaces[0];
+ const originalBox=surface.box,scan=surface.geo.computeBoundingBox.bind(surface.geo);
+ let scans=0;surface.geo.computeBoundingBox=()=>{scans++;scan();};
+ const rest=new T.Vector3().fromBufferAttribute(pos,0);
+ const leaf={owner:'leaf',position:rest.clone(),normal:new T.Vector3(0,1,0)};
+ const other={owner:'elsewhere',position:rest.clone(),normal:new T.Vector3(0,1,0)};
+ const contacts=new PlantContacts(),world={habitat,anchors:[leaf,other],agents:[{position:new T.Vector3(),route:[0]}]};
+ const flow=floraFlow(geo.attributes.floraStem,geo.attributes.floraSway);
+ for(const time of [1,2,5]){
+  if(time===2)transform.makeRotationZ(.35).setPosition(.02,.005,0);
+  contacts.update(world,{},time);
+  assert.deepEqual(leaf.position,flow(rest.clone(),0,time).applyMatrix4(transform));
+  assert.deepEqual(other.position,rest);
+  assert.equal(surface.box,originalBox);
+  assert.deepEqual(surface.box,new T.Box3().setFromBufferAttribute(surface.geo.attributes.position));
+  for(let i=0;i<pos.count;i++){
+   const expected=flow(new T.Vector3().fromBufferAttribute(pos,i),i,time).applyMatrix4(transform);
+   assert.deepEqual(new T.Vector3().fromBufferAttribute(surface.geo.attributes.position,i).toArray(),expected.toArray().map(Math.fround));
+  }
+ }
+ const previous=leaf.position.clone(), replacement={...leaf,position:previous.clone()};
+ contacts.update({...world,anchors:[replacement]}, {},6);
+ assert.deepEqual(leaf.position,previous);
+ assert.ok(replacement.position.distanceTo(flow(rest.clone(),0,6).applyMatrix4(transform))<1e-12);
+ assert.equal(scans,trimmed?4:0);
+});
+
+test('larger sway tree leaves keep contact points and normals after deformation',async()=>{
+ const geometry=new T.PlaneGeometry(.1,.1,16,16).rotateX(-Math.PI/2),p=geometry.attributes.position;
+ const stem=new Float32Array(p.count*4),sway=new Float32Array(p.count*2);
+ for(let i=0;i<p.count;i++){
+  p.setY(i,.04+.01*Math.sin(p.getX(i)*20)*Math.cos(p.getZ(i)*23));
+  stem.set([0,0,0,1],i*4);sway.set([.003,.05],i*2);
+ }
+ geometry.setAttribute('floraStem',new T.BufferAttribute(stem,4));
+ geometry.setAttribute('floraSway',new T.BufferAttribute(sway,2));
+ const item={node:'leaf',owner:'leaf',kind:3,geometry,transform:new T.Matrix4(),material:{leaf:1,motion:1}};
+ const make=async flora=>({habitat:await createHabitat(null,null,()=>{},null,[{...item,flora}]),anchors:[],agents:[{position:new T.Vector3(0,.04,0),route:[],swim:{}}]});
+ const [before,after]=await Promise.all([make(false),make(true)]),contacts=[new PlantContacts(),new PlantContacts()];
+ const origin=new T.Vector3(), down=new T.Vector3(0,-1,0);
+ for(const time of [1,2,10]){
+  contacts[0].update(before,{},time);contacts[1].update(after,{},time);
+  assert.deepEqual(after.habitat.surfaces[0].box,before.habitat.surfaces[0].box);
+  for(let i=0;i<32;i++){
+   origin.set(((i*.618)%1-.5)*.09,.12,((i*.382)%1-.5)*.09);
+   const a=before.habitat.cast(origin,down,.16),b=after.habitat.cast(origin,down,.16);
+   assert.ok(a&&b);
+   assert.deepEqual(b.point,a.point);assert.deepEqual(b.normal,a.normal);
+  }
  }
 });
 

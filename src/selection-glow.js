@@ -98,7 +98,7 @@ export function createSelectionGlow(scene) {
         if (!animals.includes(animal)) { group.remove(entry.mesh); entry.materials.forEach(m => m.dispose()); overlays.delete(animal); }
       }
       for (const animal of animals) {
-        const s = animal.rig.visible ? strength(animal.id, hoveredId, now, persistent) : 0;
+        const s = group.visible && animal.rig.visible ? strength(animal.id, hoveredId, now, persistent) : 0;
         const entry = s > 0.002 ? overlay(animal) : overlays.get(animal);
         if (!entry) continue;
         entry.mesh.visible = s > 0.002;

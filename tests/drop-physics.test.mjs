@@ -7,6 +7,20 @@ import {createDropWorld,dropSignature} from '../src/drop-physics.js';
 const mesh=g=>({vertices:g.attributes.position.array.slice(),indices:new Uint32Array(g.index.array)});
 const box=(id,x,y,width,height,depth)=>({id,key:id,position:[x,y,0],rotation:{x:0,y:0,z:0,w:1},meshes:[mesh(new T.BoxGeometry(width,height,depth))]});
 const ground={rows:2,columns:2,width:1.2,depth:.6,heights:new Float32Array(4).fill(.04)};
+test('fixed collision shapes discard unused vertices and keep the same directed triangles',async()=>{
+ const base=box('base',0,.08,.08,.08,.08),mesh=base.meshes[0];
+ const positions=new Float32Array(mesh.vertices.length*2);
+ for(let i=0;i<mesh.vertices.length;i+=3)positions.set(mesh.vertices.subarray(i,i+3),i*2+3);
+ const indices=mesh.indices.map(i=>2*i+1);
+ base.meshes=[{vertices:positions,indices}];
+ const shapes=new Map(),world=await createDropWorld({ground,bodies:[base]},shapes);
+ try{
+  const shape=shapes.get('base:0:true');
+  assert.equal(shape.vertices.length,new Set(indices).size*3);
+  const triangles=({vertices,indices})=>Array.from(indices,i=>vertices.slice(3*i,3*i+3).join(','));
+  assert.deepEqual(triangles(shape),triangles(mesh));
+ }finally{world.dispose();}
+});
 test('prepared collision world restores independent bodies at new poses and invalidates changed ground or roles',async()=>{
  const input={ground,bodies:[box('base',-.12,.08,.08,.08,.08),box('drop',0,.3,.08,.08,.08)],wake:['drop']};
  const original=await createDropWorld(input),prepared=original.snapshot();original.step();original.dispose();

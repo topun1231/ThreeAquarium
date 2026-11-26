@@ -5,9 +5,11 @@ import {createReadStream} from 'node:fs';
 import {stat} from 'node:fs/promises';
 import {pipeline} from 'node:stream/promises';
 import {createGzip} from 'node:zlib';
+import {wallpaperService} from './wallpaper-service.mjs';
+const serveWallpaper=wallpaperService();
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.bin':'application/octet-stream','.webp':'image/webp','.jpg':'image/jpeg','.png':'image/png','.md':'text/plain; charset=utf-8'};
-const server=http.createServer(async(req,res)=>{
+const server=http.createServer((req,res)=>serveWallpaper(req,res,async()=>{
  if(!['GET','HEAD'].includes(req.method)){res.writeHead(405).end();return;}
  if(req.url==='/health'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({app:'three-aquarium',version:1}));return;}
  try{
@@ -21,6 +23,6 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='HEAD'){res.end();return;}
   const stream=createReadStream(file);await pipeline(...(gzip?[stream,createGzip({level:1}),res]:[stream,res]));
  }catch(e){if(!res.headersSent)res.writeHead(400).end('Bad request');else res.destroy();}
-});
+}));
 server.listen(5173,'127.0.0.1',()=>console.log('Aquarium: http://127.0.0.1:5173'));
 server.on('error',e=>{console.error(e.message);process.exitCode=1;});

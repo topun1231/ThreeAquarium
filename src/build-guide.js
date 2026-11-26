@@ -23,6 +23,7 @@ export function createBuildGuide(panel, onStep) {
   const guide = document.createElement('section');
   guide.id = 'build-guide'; guide.hidden = true; guide.setAttribute('aria-label','建造鱼缸');
   guide.innerHTML = `<h2>建造你的鱼缸</h2><ol>${BUILD_STEPS.map((s,i)=>`<li><button type="button" data-step="${i}">${i+1}　${s.title}</button></li>`).join('')}</ol><p id="build-instruction" role="status"></p>`;
+  guide.querySelector('#build-instruction').tabIndex=-1;
   guide.onclick = e => {const b=e.target.closest('button[data-step]');if(b&&!b.disabled)onStep(Number(b.dataset.step));};
   document.body.append(guide);
   const actions = document.createElement('div'); actions.id = 'setup-actions';
@@ -60,8 +61,9 @@ export function createBuildGuide(panel, onStep) {
       if (building) {
         const reason = filling > 0 ? '' : buildRequirement(tank,soil);
         $('setup-next').disabled = busy || filling > 0 || !!reason;
-        $('setup-next').textContent = reason || (step===2?`${tank.Hardscape.length} 件木石 · ${tank.Plants.length+(tank.Flora?.length||0)} 株水草，注水 →`:config.next);
-        $('setup-next').title = reason || (step===2?`本缸 ${tank.Hardscape.length} 件木石、${tank.Plants.length+(tank.Flora?.length||0)} 株水草；点击后注水`:config.next);
+        const next=step===1 && !tank.Hardscape.length?'跳过木石，直接种草 →':config.next;
+        $('setup-next').textContent = reason || (step===2?`${tank.Hardscape.length} 件木石 · ${tank.Plants.length+(tank.Flora?.length||0)} 株水草，注水 →`:next);
+        $('setup-next').title = reason || (step===2?`本缸 ${tank.Hardscape.length} 件木石、${tank.Plants.length+(tank.Flora?.length||0)} 株水草；点击后注水`:next);
       } else $('setup-next').title = '';
     },
   };

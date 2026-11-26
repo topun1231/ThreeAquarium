@@ -1,9 +1,12 @@
 import {stableSeed} from './state.js';
+import {broodQualityTarget,hasGoalColour,meetsBroodGoal} from './crystal-traits.js';
 import {realSpanLabel} from './ecology.js';
+import {FEEDING_RADIUS,PELLET_SINK_SECONDS} from './feeding-pellet.js';
 import {floraCatalogLabel, unityPlantName} from './plant-names.js';
 
-const STATE = {Rest:'休息', Walk:'行走', Climb:'攀爬', Graze:'摄食', Groom:'清洁', Hide:'躲藏', RoutineSwim:'短游', EscapeSwim:'弹尾'};
+export const activityNames = {Graze:'摄食', Groom:'清洁', Walk:'行走', Climb:'攀爬', RoutineSwim:'短游', EscapeSwim:'弹尾', Hide:'躲藏', Rest:'休息'};
 const DAY = 86400;
+export {FEEDING_RADIUS};
 export const MATURITY_DAYS = 75;
 export const BERRY_DAYS = 28;
 export const REST_DAYS = 14;
@@ -14,6 +17,79 @@ export const CROWD_LIMIT = 36;
 export const POP_CAP = 50;
 export const NAME_LIMIT = 16;
 export const TREAT_BONUS = 0.12;
+
+export const observationNames={LatestBrood:'最近一窝的在缸后代',GoalHatchlings:'长出目标花色的幼虾',GoalAdults:'达到选育目标的成虾',...activityNames,Berried:'抱卵中',Juvenile:'成长中的幼虾',MealVisitors:'吃过最近一次加餐',RookieEntrants:'新秀赛代表'};
+export function observationRoster(agents,colony,batches=[]){
+  const counts=new Map();
+  const entries=agents.map(({data:{CreatureId:id}})=>{
+    const label=colony?.shrimp?.[id]?.name || id;
+    counts.set(label,(counts.get(label)||0)+1);
+    return {value:id,label};
+  });
+  const residents=new Map(entries.map(entry=>[entry.value,entry]));
+  for(let i=batches.length-1;i>=0 && residents.size;i--){
+    const batch=batches[i];
+    if(batch.status!=='hatched' && batch.status!=='complete')continue;
+    for(const [position,child] of batch.children.entries()){
+      const entry=residents.get(child.id);
+      if(!entry)continue;
+      const order=counts.get(entry.label)>1?'第 '+(position+1)+' 只':'';
+      entry.label+=' · 第 '+(i+1)+' 窝'+order;
+      if(batch.rookieEntry?.entrantId===child.id)entry.label+=' · 新秀赛第 '+batch.rookieEntry.rank+' 名';
+      residents.delete(child.id);
+    }
+  }
+  const sameNameOrder=new Map();
+  for(const entry of residents.values()){
+    if(counts.get(entry.label)<2)continue;
+    const position=(sameNameOrder.get(entry.label)||0)+1;
+    sameNameOrder.set(entry.label,position);
+    entry.label+=' · 同名第 '+position+' 只';
+  }
+  const favorites=[],others=[];
+  for(const entry of entries){
+    if(colony?.shrimp?.[entry.value]?.favorite){
+      entry.label+=' · 已收藏';
+      favorites.push(entry);
+    }else others.push(entry);
+  }
+  return favorites.concat(others);
+}
+export function observationGroups(agents,colony,batches=[],individuals=[]){
+  const groups=Object.fromEntries(Object.keys(observationNames).map(key=>[key,[]]));
+  const mothers=new Set(), entrants=new Set();
+  const residents=new Set(agents.map(agent=>agent.data.CreatureId));
+  let latest,family;
+  for(let i=batches.length-1;i>=0;i--){
+    const batch=batches[i];
+    if(batch.status==='hatched' && batch.goal){
+      for(const kid of batch.children)if(residents.has(kid.id) && hasGoalColour(kid,batch.goal))groups.GoalHatchlings.push(kid.id);
+    }
+    if(batch.status==='complete' && (batch.goal || batch.qualityGoal)){
+      const kids=batch.children.filter(kid=>residents.has(kid.id));
+      if(kids.length){
+        if(batch.qualityGoal)family??=new Map(individuals.map(r=>[r.id,r]));
+        const target=broodQualityTarget(batch.qualityGoal,family?.get(batch.motherId),family?.get(batch.fatherId));
+        for(const kid of kids)if((!batch.qualityGoal || target) && meetsBroodGoal(kid,batch.goal,target))groups.GoalAdults.push(kid.id);
+      }
+    }
+    if(batch.status==='formed')mothers.add(batch.motherId);
+    if(batch.rookieEntry)entrants.add(batch.rookieEntry.entrantId);
+    if((batch.status==='hatched' || batch.status==='complete') && (!latest || batch.hatchAt>latest.hatchAt) &&
+        batch.children?.some(child=>residents.has(child.id)))latest=batch;
+  }
+  if(latest)groups.LatestBrood=latest.children.map(child=>child.id).filter(id=>residents.has(id));
+  const visitors=new Set(colony?.lastFeeding);
+  for(const {data:{CreatureId:id,ExecutionState:state}} of agents){
+    const record=colony?.shrimp?.[id];
+    if(entrants.has(id))groups.RookieEntrants.push(id);
+    if(visitors.has(id))groups.MealVisitors.push(id);
+    if(Object.hasOwn(activityNames,state))groups[state].push(id);
+    if(record?.hatchAt!=null || mothers.has(id))groups.Berried.push(id);
+    if(record?.ageDays<MATURITY_DAYS)groups.Juvenile.push(id);
+  }
+  return groups;
+}
 
 export function isFemale(id) { return stableSeed(String(id)) % 2 === 0; }
 
@@ -33,15 +109,6 @@ export function biofilmRichness({plants = 0, hardscape = 0, simSeconds = 0} = {}
   const stone = Math.min(1, Math.max(0, hardscape) / 4);
   const maturity = Math.min(1, Math.max(0, simSeconds) / DAY / 21);
   return Math.min(1, leaf * 0.62 + stone * 0.18 + maturity * 0.2);
-}
-
-export function relieveHunger(creatures, hours, richness) {
-  const drop = Math.max(0, hours) * 0.06 * Math.max(0, richness);
-  for (const creature of creatures) {
-    const needs = creature.Needs || creature.data?.Needs;
-    if (!needs) continue;
-    needs.Hunger = Math.max(0.06, Math.min(1, needs.Hunger - drop));
-  }
 }
 
 function adultRecord(index) {
@@ -84,7 +151,8 @@ function readyToBerry(agent, record, simSeconds, richness, treat, room) {
 
 export function colonyTick(colony, agents, seconds, simSeconds, {richness = 0, limit = POP_CAP} = {}) {
   if (!Number.isFinite(seconds) || seconds < 0 || seconds > 365 * DAY) throw new Error('生态时间无效');
-  const next = {shrimp:{...colony.shrimp}, journal:[...(colony.journal || [])], treat:Math.max(0, Math.min(1, colony.treat || 0))};
+  const next = {...colony,shrimp:{...colony.shrimp}, journal:[...(colony.journal || [])], treat:Math.max(0, Math.min(1, colony.treat || 0))};
+  if(colony.lastFeeding)next.lastFeeding=[...colony.lastFeeding];
   for (const [id, record] of Object.entries(next.shrimp)) next.shrimp[id] = {...record};
   syncRoster(next, agents);
   let hatches = 0;
@@ -119,7 +187,7 @@ export function colonyTick(colony, agents, seconds, simSeconds, {richness = 0, l
 }
 
 export function noteTreat(colony, pelletBusy) {
-  const next = {shrimp:colony.shrimp, journal:colony.journal, treat:colony.treat || 0};
+  const next = {...colony, treat:colony.treat || 0};
   if (pelletBusy || next.treat >= TREAT_BONUS) return {colony:next, stacked:false};
   next.treat = TREAT_BONUS;
   return {colony:next, stacked:true};
@@ -162,7 +230,7 @@ export function shrimpDetail(agent, record, simSeconds) {
   return `${record.favorite ? '★ ' : ''}${record.name} · ${sex} · ${stage}${berry}\n饥饿 ${Math.round(needs.Hunger * 100)}% · 压力 ${Math.round(needs.Stress * 100)}% · 疲劳 ${Math.round(needs.Fatigue * 100)}%`;
 }
 
-export function careSummary(agents, colony, {simSeconds = 0, plants = [], definitions = [], richness = 0, flora = []} = {}) {
+export function careSummary(agents, colony, {simSeconds = 0, plants = [], definitions = [], richness = 0, flora = [], managedBreeding = false} = {}) {
   if (!agents.length) return '缸里还没有虾。注水之后，成熟的母虾会在条件合适时抱卵。';
   const book = colony?.shrimp || {};
   const grazing = agents.filter(agent => agent.data.ExecutionState === 'Graze').length;
@@ -176,13 +244,25 @@ export function careSummary(agents, colony, {simSeconds = 0, plants = [], defini
     headline += ` · 抱卵 ${berried.length} 只，${countdown(soon)}`;
   }
   if (agents.length >= POP_CAP) headline += ' · 虾群已满（50）';
-  else if (!berried.length && richness >= 0.45) headline += ' · 成熟母虾会慢慢抱卵';
+  else if (!managedBreeding && !berried.length && richness >= 0.45) headline += ' · 成熟母虾会慢慢抱卵';
   const favorites = agents.map((agent, index) => ({agent, index, record:book[agent.data.CreatureId]})).filter(item => item.record?.favorite);
   favorites.sort((a, b) => a.index - b.index);
   const lines = [headline, `生态第 ${Math.floor(simSeconds / DAY) + 1} 天 · ${plantLine(plants, definitions, flora)}`];
   if (favorites.length) lines.push('收藏：' + favorites.map(item => `★${item.record.name}`).join('、'));
   const notes = (colony?.journal || []).slice(-3).map(item => `第 ${item.day} 天 · ${item.text}`);
   return [...lines, ...notes].join('\n');
+}
+
+export function careNeeds(agents, colony) {
+  return agents.flatMap(({data:{CreatureId:id,Needs:{Hunger,Stress}}})=>{
+    const signs=[];
+    if(Hunger>=.7)signs.push('饥饿 '+Math.round(Hunger*100)+'%');
+    if(Stress>=.7)signs.push('压力 '+Math.round(Stress*100)+'%');
+    if(!signs.length)return [];
+    const name=colony.shrimp[id]?.name||id;
+    const sameName=agents.some(other=>other.data.CreatureId!==id&&colony.shrimp[other.data.CreatureId]?.name===name);
+    return [{id,name,identity:sameName?name+' · '+id:name,signs:signs.join(' · ')}];
+  });
 }
 
 export function favoriteRoster(agents, colony) {
@@ -225,14 +305,19 @@ function colonyRecord(value, id) {
 export function feedingSummary(world, colony) {
   const pellet = world.pellet, center = pellet && world.anchors[pellet.anchor];
   if (!center) return null;
-  const nearby = world.anchors.filter(anchor => anchor.position.distanceTo(center.position) < .11);
+  const nearby = world.anchors.filter(anchor => anchor.position.distanceTo(center.position) < FEEDING_RADIUS);
   const food = nearby.reduce((sum, anchor) => sum + anchor.food, 0) / nearby.length;
-  const eaters = world.agents.filter(agent => agent.data.ExecutionState === 'Graze'
+  const identity = agent => ({id:agent.data.CreatureId, name:colony.shrimp[agent.data.CreatureId]?.name || '未命名的虾'});
+  const sinking = pellet.age < PELLET_SINK_SECONDS;
+  const eaters = sinking ? [] : world.agents.filter(agent => agent.data.ExecutionState === 'Graze'
     && !agent.manual && !agent.swim && !agent.route.length
     && world.anchors[agent.at]?.food > 0
-    && world.anchors[agent.at].position.distanceTo(center.position) < .11
-  ).map(agent => ({id:agent.data.CreatureId, name:colony.shrimp[agent.data.CreatureId]?.name || '未命名的虾'}));
-  return {sinking:pellet.age < 2.5, food:food > .6 ? '较多' : food > .25 ? '有所减少' : '较少', eaters};
+    && world.anchors[agent.at].position.distanceTo(center.position) < FEEDING_RADIUS
+  ).map(identity);
+  const fed=new Set([...(colony.lastFeeding || []),...eaters.map(r=>r.id)]);
+  const waiting=world.agents.filter(a=>a.noticed && !fed.has(a.data.CreatureId)).map(identity);
+  return {sinking, food:food > .6 ? '较多' : food > .25 ? '适中' : '较少',
+    empty:world.agents.length===0, discovered:world.agents.some(agent=>agent.noticed), visitors:colony.lastFeeding?.length ?? 0, eaters, waiting};
 }
 
 export function sanitizeColony(colony) {
@@ -258,5 +343,8 @@ export function sanitizeColony(colony) {
   }
   const treat = colony.treat || 0;
   if (!Number.isFinite(treat) || treat < 0 || treat > 1) throw new Error('虾群繁育记录无效');
-  return {shrimp, journal, treat};
+  if(colony.lastFeeding===undefined)return {shrimp,journal,treat};
+  const ids=colony.lastFeeding;
+  if(!Array.isArray(ids)||ids.length>50||new Set(ids).size!==ids.length||!ids.every(id=>typeof id==='string' && id.length>0 && id.length<=128))throw new Error('加餐个体记录无效');
+  return {shrimp,journal,treat,lastFeeding:[...ids]};
 }

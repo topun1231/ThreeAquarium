@@ -32,27 +32,30 @@ export function soilFootprint(soil,p,tool,heavy=false,direction={x:1,z:0}) {
   return points;
 }
 
-export function createPlacementPreview(aq,runtime,{flora,plantAt,movePlantAt}={}) {
+export function createPlacementPreview(aq,runtime,{flora,plantAt,movePlantAt,prepareCut}={}) {
   const root=new T.Group();root.name='Placement preview';root.visible=false;aq.root.add(root);
   const material=new T.MeshBasicMaterial({color:'#9ddbaa',transparent:true,opacity:.38,depthWrite:false,side:T.DoubleSide});
   const line=new T.LineSegments(new T.BufferGeometry(),new T.LineBasicMaterial({color:'#eacb72',depthWrite:false}));line.renderOrder=5;line.frustumCulled=false;root.add(line);
   const label=document.createElement('div');label.id='placement-hint';label.hidden=true;document.body.append(label);
-  let model=null,modelKey='',ghost=null,error=null,version=0,last=null,world=null;
+  let model=null,modelKey='',ghost=null,error=null,version=0,last=null,world=null,cancelWarm=null;
 
   let direction={x:1,z:0};
   let plant=null,plantStamp='',plantResult=null,plantLoading=null,plantError=null;
   function clearPlant(){disposePlantGhost(plant);plant=null;plantStamp='';plantResult=null;}
   function clearGhost(){ghost?.removeFromParent();ghost=null;}
-  function release(){model=null;modelKey='';clearGhost();last=null;}
+  function release(){cancelWarm?.();cancelWarm=null;model=null;modelKey='';clearGhost();last=null;}
   function tint(node){node.traverse(o=>{if(o.isMesh){o.material=material;o.castShadow=false;o.receiveShadow=false;o.renderOrder=4;}});return node;}
   function request(key,moving){
     const stamp=key+':'+JSON.stringify(moving||null);if(stamp===modelKey)return;
     release();modelKey=stamp;error=null;const token=++version;
     const record=moving?structuredClone(moving):{UniqueId:'placement-preview',TypeId:key,Position:{x:0,y:0,z:0},Rotation:{x:0,y:0,z:0},Scale:{x:1,y:1,z:1},Burial:.003};
-    runtime.ensureCatalog().then(()=>{if(token!==version)return;const node=runtime.hardscape(record);node.updateMatrixWorld(true);model={node,record};ghost=tint(node.clone(true));root.add(ghost);queueHardscapeDrop(runtime,record,!!moving);}).catch(e=>{if(token===version)error=e.message;});
+    const ready=()=>{if(token!==version)return;const node=runtime.hardscape(record);node.updateMatrixWorld(true);model={node,record};ghost=tint(node.clone(true));ghost.visible=false;root.add(ghost);cancelWarm=queueHardscapeDrop(runtime,record,!!moving);};
+    const failed=e=>{if(token===version)error=e.message;};
+    if(runtime.catalog || (moving && runtime.originals.has(record.UniqueId))){try{ready();}catch(e){failed(e);}}
+    else runtime.ensureCatalog().then(ready).catch(failed);
   }
   function hide(){root.visible=false;label.hidden=true;}
-  return {root,hide,
+  return {root,hide,prepareStone:request,
     update({point,hit,tool,key,plantKey,moving=null,heavy=false,screen,force=false}) {
       const current=runtime.current;if(!current||!point){hide();return null;}
       root.visible=true;label.hidden=false;label.style.left=Math.min(innerWidth-240,Math.max(8,screen.clientX+18))+'px';label.style.top=Math.max(8,Math.min(innerHeight-65,screen.clientY-40))+'px';
@@ -86,9 +89,15 @@ export function createPlacementPreview(aq,runtime,{flora,plantAt,movePlantAt}={}
         root.userData={tool,valid,point:{...point}};return {valid};
       }
       line.visible=false;
+      if(tool==='prune'){
+        if(modelKey){version++;release();}
+        try{label.textContent=prepareCut(hit,point).hint;}
+        catch(e){label.textContent=e.message;}
+        return null;
+      }
       if(tool!=='stone'&&!movingStone){if(modelKey){version++;release();}hide();return null;}
       request(key,moving);
-      if(!model){label.textContent=error||'正在准备木石模型…';root.userData={tool,valid:false};return null;}
+      if(!model){label.textContent=error||'正在准备木石模型…';root.userData={tool,valid:false,pending:!error,reason:label.textContent};return root.userData;}
       const result=!movingStone&&current.save.Tank.Hardscape.length>=24?{valid:false,reason:'每缸最多 24 件木石'}:releasePose(model.node,model.record,point,current,movingStone);
       if(result.record){const p=result.record.Position,b=model.record.Position;ghost.position.copy(model.node.position).add(new T.Vector3(p.x-b.x,p.y-b.y,p.z-b.z));}
       ghost.visible=!!result.record;material.color.set(result.valid?'#9ddbaa':'#ff6555');label.textContent=result.reason;

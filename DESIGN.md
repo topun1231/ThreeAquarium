@@ -2,23 +2,23 @@
 name: ThreeAquarium Crystal UI
 description: 试用水晶虾界面的缸边工具与个体标本册；依据源码记录，未经视觉验收。
 colors:
-  panel-water: "#f1f7fc"
-  dock-water: "#f1f7fcf2"
-  paper: "#e7f1f9"
-  paper-ink: "#24394d"
-  panel-ink: "#24394d"
-  muted: "#536b7f"
-  brass-action: "#bdd9ed"
-  brass-hover: "#cee5f5"
-  action-ink: "#24394d"
-  focus: "#2d6d9d"
-  paper-focus: "#2d6d9d"
-  card: "#ffffff"
-  card-hover: "#eaf3fb"
-  card-selected: "#dfedf9"
-  selected-edge: "#3979aa"
-  field: "#ffffff"
-  field-ink: "#24394d"
+  panel-water: "#f6efe5"
+  dock-water: "#faf3e6f5"
+  paper: "#f8f2ea"
+  paper-ink: "#302923"
+  panel-ink: "#302923"
+  muted: "#655b50"
+  brass-action: "#92392c"
+  brass-hover: "#813126"
+  action-ink: "#fffbf5"
+  focus: "#92392c"
+  paper-focus: "#92392c"
+  card: "#fffbf5"
+  card-hover: "#f8f2ea"
+  card-selected: "#eddfcc"
+  selected-edge: "#92392c"
+  field: "#fffbf5"
+  field-ink: "#302923"
   danger: "#943e2d"
   paper-danger: "#943e2d"
 typography:
@@ -88,15 +88,19 @@ components:
 
 # Design System: ThreeAquarium Crystal UI
 
-## 当前配色：浅蓝、蓝灰、清晰蓝色强调
+## 当前试用方向 · 三渲二水草缸与选育手记
 
-用户最新要求为浅蓝色；本节替代下方炭灰历史说明。当前CSS采用 light color-scheme，面板冰蓝、详情浅蓝、文字深蓝灰，图片独立蓝灰展示底；HUD有浅底承托深字。实际截图 output/playwright/light-blue-book-final.png。旧键名 panel-water / paper 仅为兼容文档字段，值已更新；`.impeccable/design.json` 仍为历史快照。
+缸景沿用立体模型、投影和水面折射，用色块表现受光面与背光面，用细线区分前后遮挡。水和玻璃保留平滑过渡，让玩家能透过缸壁看清白虾和水草。虾册从同一个体模型生成肖像，在暖纸底上以暖灰细边保留白壳轮廓，关键操作用朱红强调。以当前试用源码和截图为准，以下为历次设计记录。
+
+## 历史：浅蓝、蓝灰、清晰蓝色强调
+
+该阶段采用浅蓝色；本节替代下方炭灰历史说明。当前CSS采用 light color-scheme，面板冰蓝、详情浅蓝、文字深蓝灰，图片独立蓝灰展示底；HUD有浅底承托深字。实际截图 output/playwright/light-blue-book-final.png。旧键名 panel-water / paper 仅为兼容文档字段，值已更新；`.impeccable/design.json` 仍为历史快照。
 
 ## 历史：炭灰、暖白、香槟金
 
 2026-10-29 用户明确否决绿色UI。当前所有界面底色改为炭灰，卡片和详情用中性灰区分，主要动作及选中保留少量香槟金；文字为暖白或中性灰。属性条也去掉绿色。只改CSS色值，布局／玩法／存档不改，水草和水体的场景颜色不受影响。实际截图见 output/playwright/charcoal-book-final.png。
 
-## 当前返修说明
+## 历史返修说明
 
 原浅色纸页布局已被用户否决。当前使用深色详情；paper 系列字段暂保留旧键名但值已更新。个体卡必须按内容决定行高，不能压到42–65px。图像和加载占位共享108px槽，卡片最小192px；最大名字允许增高。≤720px为横向卡条。`.impeccable/design.json` 为旧稿生成快照，不可当作当前样式来源。下方未更新的历史组件描述以本说明和源码为准。
 
@@ -206,5 +210,16 @@ components:
 玩家承诺：亲手搭出家，让同一批有身份的虾生活、成长并留下下一代。
 核心循环：布置水草缸 → 注水领养 → 在实际缸内观察和加餐 → 虾册挑亲虾 → 主缸或繁育缸安排一窝 → 看后代长大 → 留种、收藏或参赛。容量含预留，没空间可暂停；失败不给玩家丢虾。
 空间安排：主缸保持玩家布局，木石和植物继续提供实际活动表面；繁育缸可选，不强制把选育从主缸搬走。最初决策是如何造景，首次奖励是在自己的缸里看到入虾。
+
+窗边缸位按从室内正面看房间的方向固定。主缸留在左侧窗边木柜，右边沿同一面墙放双层繁育架。各缸的正面都朝向走道。
+
+| 缸位 | 位置 | 容量 |
+| --- | --- | ---: |
+| 我的造景缸 | 窗边木柜 | 20 |
+| 繁育缸 | 右侧架上层左边 | 10 |
+| 第二繁育缸 | 右侧架上层右边 | 10 |
+| 第三繁育缸 | 右侧架下层左边 | 10 |
+
+下层右边留给换水和养护用品。繁育架的两层分别承重，缸顶留出投喂、捞虾和换水空间。缸位图在窄屏也按走道正面排列，标出当前所在和下一个可添置的缸位。添置后自动放到图中对应的位置，点击已拥有的缸位即可前往。普通观察时也可以直接点击场景里的其他缸或架边缸名牌。位置绑定原有缸号，现有存档直接对应。单缸观察和壁纸以选中的一口缸为主体，横屏整组远景沿用相同的物理摆位。
 信息反馈：未注水显示开缸提示，注水后提示领养；同缸 ID 对应虾册与实际动物。撤销只处理造景；虾和后代的进展不会因撤销布局被抹去。
 本轮不新增品种、遗传属性、奖励强度或压力惩罚，不改摄像机。

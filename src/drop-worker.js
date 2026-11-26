@@ -10,10 +10,16 @@ async function handle(data){
       self.postMessage({request:data.request,done:true,warm:true});return;
     }
     clearTimeout(timer);simulation?.dispose();simulation=null;
-    if(ready&&prepared?.signature===signature){simulation=ready;ready=null;simulation.release(data.bodies);}
-    else{ready?.dispose();ready=null;simulation=await createDropWorld(data,shapes,prepared);}
+    if(ready&&prepared?.signature===signature){simulation=ready;ready=null;}
+    else{
+      ready?.dispose();ready=null;
+      // Build the unstepped template in one frame so prewarming at another pose cannot change the fall.
+      const bodies=data.bodies.map(body=>({...body,position:[0,0,0],rotation:{x:0,y:0,z:0,w:1}}));
+      simulation=await createDropWorld({...data,bodies},shapes,prepared);
+    }
     if(prepared?.signature!==signature)prepared=simulation.snapshot();
     if(data.warm){ready=simulation;simulation=null;self.postMessage({request:data.request,done:true,warm:true});return;}
+    simulation.release(data.bodies);
     let steps=1;
     const tick=()=>{
       const started=performance.now();

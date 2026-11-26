@@ -3,8 +3,26 @@ export const MAX_WATER_TRAVEL = 0.9;
 
 export const FOG_GLSL = `
 float aqViewZ(float depth){float z=depth*2.-1.;return (2.*aqNear*aqFar)/(aqFar+aqNear-z*(aqFar-aqNear));}
-float aqTravel(float glassDepth,float sceneDepth){return clamp(aqViewZ(sceneDepth)-aqViewZ(glassDepth),0.,${MAX_WATER_TRAVEL.toFixed(2)});}
-vec3 aqFogged(vec3 color,vec2 uv){float fog=clamp(aqTravel(gl_FragCoord.z,texture2D(aqDepth,uv).r)/.6,0.,1.)*aqFog*aqWet;vec3 absorbed=color*mix(vec3(1.),vec3(.70,.90,.85),min(1.,fog*1.6));return mix(absorbed,vec3(.050,.105,.095),fog);}
+vec2 aqTravel(float glassDepth,float sceneDepth){
+  vec3 ray=normalize(aqWorld-cameraPosition);
+  float sceneDistance=(aqViewZ(sceneDepth)-aqViewZ(glassDepth))/max(.001,-(mat3(viewMatrix)*ray).z);
+  // Clip the ray to the actual water volume, including the current fill height.
+  vec3 safeRay=mix(vec3(-1.),vec3(1.),step(vec3(0.),ray))*max(abs(ray),vec3(.00001));
+  vec3 local=aqWorld;
+  #ifdef AQ_NEIGHBOUR_SURFACE
+    local-=aqTankOrigin;
+  #endif
+  vec3 a=(vec3(-.608,0.,-.308)-local)/safeRay;
+  vec3 b=(vec3(.608,aqLevel,.308)-local)/safeRay;
+  vec3 entry=min(a,b),leave=max(a,b);
+  float start=max(0.,max(entry.x,max(entry.y,entry.z)));
+  float end=min(sceneDistance,min(leave.x,min(leave.y,leave.z)));
+  return vec2(start,max(start,end));
+}
+vec3 aqFogged(vec3 color,float travel){
+  float fog=clamp(travel/.6,0.,1.)*aqFog*aqWet;
+  return mix(color,vec3(.12,.12,.115),fog*.32);
+}
 `;
 
 export function viewZ(depth, near, far) {

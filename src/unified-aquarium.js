@@ -21,7 +21,7 @@ export function unifyAquarium(current, {original = null, resume = null, source, 
   const main = roomCore(own?.session || oldMain || current.session);
   const state = breeding ? structuredClone(breeding.session.Breeding) : emptyUnifiedProgress(now, seed);
   state.unified = true; now = Math.max(now, state.now);
-  const allCreatures = new Map([...(existing?.creatures || []), ...(breeding?.creatures || [])].map(c => [c.CreatureId, structuredClone(c)]));
+  const allCreatures = new Map([...(existing?.creatures || []), ...(existing?.resting || []), ...(breeding?.creatures || [])].map(c => [c.CreatureId, structuredClone(c)]));
   for (const creature of own?.creatures || []) {
     const oldRecord = state.individuals.find(r => r.id === creature.CreatureId);
     if (oldRecord) throw new Error('两份进度的个体身份发生冲突，已保留原档，不能自动覆盖');

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as T from 'three';
-import {prewarmHardscapeDrop,animateHardscapeDrop} from '../src/hardscape-drop.js';
+import {queueHardscapeDrop,prewarmHardscapeDrop,animateHardscapeDrop} from '../src/hardscape-drop.js';
 
 test('wall-clock deadline terminates a silent or stalled worker, restores the view, and permits retry',async()=>{
  const original={Worker:globalThis.Worker,setTimeout:globalThis.setTimeout,clearTimeout:globalThis.clearTimeout},timers=new Map(),workers=[];
@@ -13,6 +13,9 @@ test('wall-clock deadline terminates a silent or stalled worker, restores the vi
  const current={save:{Tank:{Hardscape:[record],Flora:[]}},entities:new Map([['stone',node]]),habitat:{surfaces:[]},soil:{h:new Float32Array(4),Columns:2,Rows:2,Width:1.2,Depth:.6,MinHeight:0,sample:()=>.04,crest:()=>0,point:i=>({x:i%2,z:Math.floor(i/2)})}};
  const runtime={current,entries:new Map([['stone',{}]]),hardscape:()=>new T.Mesh(geometry,material)},aq={root:new T.Group()},flora={meshes:new Map()},before=JSON.stringify(current.save);
  try{
+  const first=queueHardscapeDrop(runtime,record,true),second=queueHardscapeDrop(runtime,record,true);
+  first();assert.equal(timers.size,1,'dismissing an old selection cannot cancel the current selection');
+  second();assert.equal(timers.size,0,'a briefly selected piece needs no background worker');
   for(const warm of [true,false]){
    const promise=warm?prewarmHardscapeDrop(runtime,record):animateHardscapeDrop({runtime,flora,aq,records:[record],activeId:'stone',signal:new AbortController().signal});
    const rejected=assert.rejects(promise,/计算超时/),worker=workers.at(-1);
